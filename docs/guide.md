@@ -147,9 +147,9 @@ Policies are in `eec::output`.
 - `Unbinned` coordinates are (θ_max, extra₀, …) for pENC and `frame(p)` for E1C.
 
 ## 6. Strategies
-A strategy sets how pENC enumerates tuples. It is `strategy::Strategy<Loop, Precompute>`, combining one loop with
-one per-jet precompute; everything lives in `eec::strategy`. Every combination gives the same histogram. The tests
-compare all of them against an ordered-tuple oracle.
+A strategy sets how pENC enumerates tuples. It is `strategy::Strategy<Loop, Precompute, Innermost = innermost::Peeled>`,
+combining one loop, one per-jet precompute and one form of the innermost loop; everything lives in `eec::strategy`.
+Every combination gives the same histogram. The tests compare all of them against an ordered-tuple oracle.
 
 | Loop (`strategy::loop::`) | Tuples visited | Fill count |
 |---|---|---|
@@ -162,7 +162,12 @@ compare all of them against an ordered-tuple oracle.
 | `PairAngles` | M×M `double` angle matrix | |
 | `PairBins` | M×M `uint32` matrix of axis-0 bins | uses bin(max θ) = max bin(θ). Needs a binned output (a `static_assert` otherwise) and an increasing axis 0 (the constructor throws otherwise). |
 
-Named aliases:
+| Innermost (`strategy::innermost::`) | Innermost tuple index | Notes |
+|---|---|---|
+| `Peeled` (default) | own loop; with `Multiset`, its first iteration (the one repeating the previous index) is peeled, so the symmetry factor is computed once per row | |
+| `Unpeeled` | same loop as the outer indices; symmetry factor computed per tuple | faster than `Peeled` for `PairBins` at N ≥ 5 |
+
+Named aliases (all use `innermost::Peeled`):
 
 | Alias | Loop | Precompute |
 |---|---|---|
@@ -173,10 +178,14 @@ Named aliases:
 
 The default, `DefaultFor<Output>`, is `PairBins` for binned outputs and `PairAngles` for unbinned ones.
 
-- `PairBins` is 4.5–9× faster than `PairAngles` for N = 3–6 in the `JOURNAL.md` benchmarks (both with the multiset loop), because it avoids an axis lookup per tuple.
+- `PairBins` is 5–7× faster than `PairAngles` for N = 3–6 in the `JOURNAL.md` benchmarks (both with the multiset loop), because it avoids an axis lookup per tuple.
+- `Peeled` vs `Unpeeled` (GCC 12, `JOURNAL.md`): `Peeled` is up to 26% faster for most outputs, Extras and N ≤ 4, but 8–37%
+  slower for `PairBins` at N = 5–6. For large N, use
+  `Strategy<loop::Multiset, precompute::PairBins, innermost::Unpeeled>`. The trade-off comes from the compiler's code
+  generation and may differ with another compiler; `bench/bench_penc.cc` measures both.
 - Cost grows as multichoose(M, N) with the `Multiset` loop and as Mᴺ with `Ordered`.
 - Unmerged and unbinned outputs store one entry per fill, so their memory grows the same way.
-- Loops and precomputes are closed sets: an unknown type fails a `static_assert`.
+- Loops, precomputes and innermost forms are closed sets: an unknown type fails a `static_assert`.
 
 ## 7. Binning
 `Binning(std::vector<Axis>)` is a runtime binning built from boost::histogram axes:

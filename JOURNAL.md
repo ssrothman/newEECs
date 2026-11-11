@@ -7,6 +7,8 @@
 - [2026-11-10 Strategy factorisation and update_extra](#2026-11-10-strategy-factorisation-and-update_extra)
 - [2026-11-11 Review round 2](#2026-11-11-review-round-2)
 - [2026-11-11 Review round 3: de-duplication](#2026-11-11-review-round-3-de-duplication)
+- [2026-11-11 Inner-loop optimisation study](#2026-11-11-inner-loop-optimisation-study)
+- [2026-11-11 Peeled last level, rotating-jet benchmark](#2026-11-11-peeled-last-level-rotating-jet-benchmark)
 
 ## 2026-11-10 Initial implementation
 - Plan: `simulation/stepA.md` §A.1; decisions agreed with user are in README "Conventions".
@@ -83,3 +85,38 @@ Findings:
 - 13 mutations (n check, unboost formula, static_cast charge, bin0 stride, E1C geometry, fillWeights touching geometry,
   NaN externalNorm warning, shared warn flag, extras dropped in both leaf paths, test helper skipping an output or the
   callback, no symfactor): each fails >= 1 test.
+
+## 2026-11-11 Inner-loop optimisation study
+Prototypes in scratch copies only; library unchanged. Dense, Energy/SumEnergy/DeltaR, 50-bin log axis, core-pinned, min of 3-5.
+- Cache locality is not limiting: ns/tuple is flat from L1-resident to beyond L3 (N=2 PairBins 12.1-13.5 ns for
+  M=50..2500, the M=2500 matrix is 25 MB; N=3 PairBins 3.2 -> 2.1 ns for M=30..500; PairAngles likewise). Blocking or
+  loop reordering not pursued.
+- `eec_bench` reuses one jet, so the branch predictor can learn data-dependent branches: a run-length-merging leaf
+  measured 0.66-0.76x there but 1.11-1.30x when the benchmark cycles through 32 distinct jets. Earlier loop decisions
+  (row-max, sym hoisting) were measured on the single-jet benchmark.
+- With 32 rotating jets, PairBins, new/old, reproduced on two cores:
+  - `peel`: last tuple index in its own loop; first iteration (repeated index) peeled, so symfactor is one division
+    per row, no per-leaf bookkeeping: N=3 0.77-0.80, N=4 0.84, N=5 0.89, N=2 0.99.
+  - `il2`: Dense keeps 2 interleaved histogram copies, alternating per fill, summed in finish(): 0.94-0.96 alone.
+  - `peel` + `il2`: N=3 0.69-0.73, N=4 0.67, N=5 0.70. Breaks the same-bin read-modify-write chain the peel exposes.
+  - PairAngles and Multiset unchanged (0.99-1.04): their per-leaf axis lookup dominates.
+
+## 2026-11-11 Peeled last level, rotating-jet benchmark
+- Decided with user: adopt `peel` for every output/Extra; no 2-copy Dense (memory); `eec_bench` cycles 32 distinct jets
+  and gains Extra (constant, MinDeltaR) and more output cases. The 2026-11-10 table used one repeated jet.
+- `lastLevel` peels the first multiset iteration; `leaf` takes the symfactor. Ordered loop: no peel, symfactor 1.
+  Mutations (peeled/constant symfactor wrong, peeled tuple dropped, peel applied to Ordered) each fail >= 1 test.
+- Full `eec_bench`, new/HEAD, interleaved min of 3, three independent runs agree to ~0.03:
+  - faster: Dense PairBins N=3 0.78-0.88, N=4 0.84-0.89; PairAngles N=4,5 0.80-0.93; Multiset 0.84-0.97;
+    SparseUnmerged 0.77-0.90; Unbinned 0.81-0.97; SparseMerged 0.92-0.99; ConstExtra 0.74-0.88; MinDeltaR 0.94-0.99.
+  - neutral: N=2 PairBins/PairAngles, Naive, SparseMergedSort, PairAngles N=3 (0.99-1.03).
+  - slower: Dense PairBins N=5 1.08-1.15, N=6 1.20-1.36; PairAngles N=6 1.04-1.06.
+- Tried against the N>=5 regression (all tests pass for each):
+  - row pointers hoisted per row (with/without skipping the idx store when K=0): worse, up to 1.7x at N=6.
+  - single loop with both symfactors hoisted (`j == start` select): fixes N=5,6 but loses most gains, N=4 PairBins 1.14.
+  - `-fno-tree-vectorize`: N=6 1.05 but N=5 1.15-1.23. Not a clean vectorisation effect.
+  - `[[gnu::noinline]]` lastLevel: 1.2-2.0x slower broadly (loop invariants no longer hoisted).
+- Decided with user: keep `Peeled` as the default and expose the old loop as `strategy::innermost::Unpeeled`, a third
+  defaulted `Strategy` parameter (per calculator, tested in the same binary). Oracle comparison runs every output x loop x
+  precompute for both; mutations of each path's symfactor fail >= 1 test. Which path runs is not observable in tests;
+  benchmark: Unpeeled/HEAD PairBins N=3..6 0.99-1.03 (it is HEAD's loop), Peeled/HEAD as above.

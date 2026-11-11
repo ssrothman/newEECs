@@ -62,7 +62,12 @@ namespace eectest {
   }
 
   // Calls f(toDense(result)) for every output x loop x precompute combination of ProjectedENC<N, W, Nrm, A>.
-  template <std::size_t N, class W, class Nrm, class A, class F>
+  template <std::size_t N,
+            class W,
+            class Nrm,
+            class A,
+            class Innermost = eec::strategy::innermost::Peeled,
+            class F>
   void forEachConfig(const std::vector<fastjet::PseudoJet>& ps, double n, const eec::Binning& b, const F& f) {
     namespace st = eec::strategy;
     int calls = 0;
@@ -75,10 +80,10 @@ namespace eectest {
       counted(toDense(runPENC<N, W, Nrm, A, Out, Strat>(ps, n, b), b));
     };
     auto loop = [&]<class Out, class Loop>() {
-      one.template operator()<Out, st::Strategy<Loop, st::precompute::None>>();
-      one.template operator()<Out, st::Strategy<Loop, st::precompute::PairAngles>>();
+      one.template operator()<Out, st::Strategy<Loop, st::precompute::None, Innermost>>();
+      one.template operator()<Out, st::Strategy<Loop, st::precompute::PairAngles, Innermost>>();
       if constexpr (Out::binned)
-        one.template operator()<Out, st::Strategy<Loop, st::precompute::PairBins>>();
+        one.template operator()<Out, st::Strategy<Loop, st::precompute::PairBins, Innermost>>();
     };
     auto output = [&]<class Out>() {
       loop.template operator()<Out, st::loop::Ordered>();

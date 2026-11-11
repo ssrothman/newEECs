@@ -79,7 +79,9 @@ namespace {
   template <std::size_t N, class W, class Nrm, class A>
   void compareAll(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
     const auto ref = oracle<W, Nrm>(ps, N, n, ang, b);
-    eectest::forEachConfig<N, W, Nrm, A>(ps, n, b, [&](const std::vector<double>& got) { requireClose(got, ref); });
+    auto check = [&](const std::vector<double>& got) { requireClose(got, ref); };
+    eectest::forEachConfig<N, W, Nrm, A, strategy::innermost::Peeled>(ps, n, b, check);
+    eectest::forEachConfig<N, W, Nrm, A, strategy::innermost::Unpeeled>(ps, n, b, check);
   }
 
   // Smallest pairwise DeltaR in the tuple; permutation-symmetric.
@@ -205,6 +207,8 @@ TEST_CASE("pENC normalisation and multiset bookkeeping", "[penc]") {
   checkN(EDR<4, output::SparseUnmerged>(1.0, b), 4, 2380);
   checkN(EDR<5, output::SparseUnmerged>(1.0, b), 5, 8568);
   checkN(EDR<6, output::Unbinned>(1.0), 6, 27132);
+  using Unpeeled = strategy::Strategy<strategy::loop::Multiset, strategy::precompute::PairBins, strategy::innermost::Unpeeled>;
+  checkN(EDR<4, output::SparseUnmerged, NoExtra, Unpeeled>(1.0, b), 4, 2380);
 }
 
 TEST_CASE("pENC extra binning coordinate", "[penc][extra]") {
@@ -223,6 +227,9 @@ TEST_CASE("pENC extra binning coordinate", "[penc][extra]") {
   requireClose(dense(ps).values, ref);
   EDR<3, output::SparseMerged, MinPairDR, strategy::Multiset> sparse(1.0, b);
   requireClose(toDense(sparse(ps), b), ref);
+  using Unpeeled = strategy::Strategy<strategy::loop::Multiset, strategy::precompute::PairBins, strategy::innermost::Unpeeled>;
+  EDR<3, output::Dense, MinPairDR, Unpeeled> unpeeled(1.0, b);
+  requireClose(unpeeled(ps).values, ref);
   EDR<3, output::Unbinned, MinPairDR> unb(1.0);
   const auto u = unb(ps);
   requireClose(toDense(u, b), ref);
@@ -332,6 +339,7 @@ TEST_CASE("strategy aliases and output-dependent default", "[penc][strategy]") {
   STATIC_REQUIRE(std::is_same_v<Multiset, Strategy<loop::Multiset, precompute::None>>);
   STATIC_REQUIRE(std::is_same_v<PairAngles, Strategy<loop::Multiset, precompute::PairAngles>>);
   STATIC_REQUIRE(std::is_same_v<PairBins, Strategy<loop::Multiset, precompute::PairBins>>);
+  STATIC_REQUIRE(std::is_same_v<PairBins, Strategy<loop::Multiset, precompute::PairBins, innermost::Peeled>>);
   STATIC_REQUIRE(std::is_same_v<DefaultFor<output::Dense>, PairBins>);
   STATIC_REQUIRE(std::is_same_v<DefaultFor<output::SparseUnmerged>, PairBins>);
   STATIC_REQUIRE(std::is_same_v<DefaultFor<output::Unbinned>, PairAngles>);

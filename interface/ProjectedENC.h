@@ -40,10 +40,19 @@ namespace eec {
       struct PairBins {};
     }  // namespace precompute
 
-    template <class Loop, class Precompute>
+    namespace innermost {
+      // Innermost index in its own loop with its first (repeated-index) iteration peeled, so the symmetry
+      // factor is computed once per row.
+      struct Peeled {};
+      // Innermost index handled like the outer ones, with the symmetry factor computed per tuple.
+      struct Unpeeled {};
+    }  // namespace innermost
+
+    template <class Loop, class Precompute, class Innermost = innermost::Peeled>
     struct Strategy {
       using loop_type = Loop;
       using precompute_type = Precompute;
+      using innermost_type = Innermost;
     };
 
     using Naive = Strategy<loop::Ordered, precompute::None>;
@@ -72,8 +81,8 @@ namespace eec {
 
     template <class>
     inline constexpr bool isStrategy = false;
-    template <class L, class P>
-    inline constexpr bool isStrategy<strategy::Strategy<L, P>> = true;
+    template <class L, class P, class I>
+    inline constexpr bool isStrategy<strategy::Strategy<L, P, I>> = true;
 
     // Number of multisets of size N drawn from M elements.
     inline std::size_t multichoose(std::size_t M, std::size_t N) {
@@ -148,6 +157,9 @@ namespace eec {
     static constexpr bool kOrdered = std::is_same_v<Loop, strategy::loop::Ordered>;
     static constexpr bool kPairBins = std::is_same_v<Precompute, strategy::precompute::PairBins>;
     static constexpr bool kAngleMatrix = std::is_same_v<Precompute, strategy::precompute::PairAngles>;
+    static constexpr bool kPeeled = std::is_same_v<typename Strat::innermost_type, strategy::innermost::Peeled>;
+    static_assert(kPeeled || std::is_same_v<typename Strat::innermost_type, strategy::innermost::Unpeeled>,
+                  "unknown strategy innermost");
     static_assert(kOrdered || std::is_same_v<Loop, strategy::loop::Multiset>, "unknown strategy loop");
     static_assert(kPairBins || kAngleMatrix || std::is_same_v<Precompute, strategy::precompute::None>,
                   "unknown strategy precompute");
@@ -207,28 +219,58 @@ namespace eec {
                  std::uint32_t den,
                  std::uint32_t run,
                  std::array<std::uint32_t, N>& idx) const {
-      const auto M = static_cast<std::uint32_t>(jd_.size());
-      for (std::uint32_t j = start; j < M; ++j) {
-        idx[d] = j;
-        const double w = wprod * jd_.w[j];
-        MaxT m = mx;
-        for (std::size_t k = 0; k < d; ++k)
-          m = std::max(m, pairMax(idx[k], j));
-        std::uint32_t r = 1;
-        if constexpr (d > 0 && !kOrdered) {
-          if (j == idx[d - 1])
-            r = run + 1;
+      if constexpr (d + 1 == N && kPeeled) {
+        lastLevel(start, wprod, mx, den, run, idx);
+      } else {
+        const auto M = static_cast<std::uint32_t>(jd_.size());
+        for (std::uint32_t j = start; j < M; ++j) {
+          idx[d] = j;
+          const double w = wprod * jd_.w[j];
+          MaxT m = mx;
+          for (std::size_t k = 0; k < d; ++k)
+            m = std::max(m, pairMax(idx[k], j));
+          std::uint32_t r = 1;
+          if constexpr (d > 0 && !kOrdered) {
+            if (j == idx[d - 1])
+              r = run + 1;
+          }
+          const std::uint32_t dn = den * r;
+          if constexpr (d + 1 == N)
+            leaf(idx, w, m, kOrdered ? 1u : kFactorial / dn);
+          else
+            recurse<d + 1>(kOrdered ? 0 : j, w, m, dn, r, idx);
         }
-        const std::uint32_t dn = den * r;
-        if constexpr (d + 1 == N)
-          leaf(idx, w, m, dn);
-        else
-          recurse<d + 1>(kOrdered ? 0 : j, w, m, dn, r, idx);
       }
     }
 
-    void leaf(const std::array<std::uint32_t, N>& idx, double w, MaxT m, std::uint32_t den) const {
+    // Innermost index. In the multiset loop only its first value (start == idx[N-2]) repeats an earlier index,
+    // so after that iteration the symmetry factor is constant.
+    void lastLevel(std::uint32_t start,
+                   double wprod,
+                   MaxT mx,
+                   std::uint32_t den,
+                   std::uint32_t run,
+                   std::array<std::uint32_t, N>& idx) const {
+      const auto M = static_cast<std::uint32_t>(jd_.size());
+      std::uint32_t j = start;
+      if constexpr (N > 1 && !kOrdered) {
+        leafAt(j, wprod, mx, kFactorial / (den * (run + 1)), idx);
+        ++j;
+      }
       const std::uint32_t sym = kOrdered ? 1u : kFactorial / den;
+      for (; j < M; ++j)
+        leafAt(j, wprod, mx, sym, idx);
+    }
+
+    void leafAt(std::uint32_t j, double wprod, MaxT mx, std::uint32_t sym, std::array<std::uint32_t, N>& idx) const {
+      idx[N - 1] = j;
+      MaxT m = mx;
+      for (std::size_t k = 0; k + 1 < N; ++k)
+        m = std::max(m, pairMax(idx[k], j));
+      leaf(idx, wprod * jd_.w[j], m, sym);
+    }
+
+    void leaf(const std::array<std::uint32_t, N>& idx, double w, MaxT m, std::uint32_t sym) const {
       const std::array<double, K> ex = extra_(jd_, idx);
       if constexpr (Output::binned) {
         std::uint32_t bin0;
