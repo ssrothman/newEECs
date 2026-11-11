@@ -11,7 +11,7 @@ Standalone (externals taken from the CMSSW toolbox of the `cmsenv`'d release):
 cmsenv   # e.g. in CMSSW_15_0_22/src
 cmake -S . -B build && cmake --build build -j8
 ctest --test-dir build    # unit tests (./build/testEECs) and compile-fail checks
-./build/eec_bench         # benchmarks
+./build/eec_bench         # benchmarks (also ./build/eec_bench_cov)
 ```
 Without CMSSW, pass `-DFASTJET_ROOT=... -DBOOST_INCLUDE_DIR=... -DCATCH2_INCLUDE_DIR=... -DGBENCH_ROOT=...`.
 
@@ -36,6 +36,8 @@ UnbinnedResult<2> u = e1c(constituents, f);   // coords (theta, phi)
 ```
 Charge-based weights need `p.set_user_info(new EECParticleInfo(charge, pdgId))`.
 Calculators keep per-jet scratch space: use one instance per thread.
+
+`CovarianceAccumulator` (`interface/Covariance.h`) aggregates per-event histograms and their covariance; see `docs/guide.md` §10.
 
 ## Conventions
 - pENC sums over ordered N-tuples with replacement; it is evaluated over multisets

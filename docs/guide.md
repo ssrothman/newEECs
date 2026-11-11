@@ -10,6 +10,7 @@
 - [7. Binning](#7-binning)
 - [8. State, threading and errors](#8-state-threading-and-errors)
 - [9. Extending the library](#9-extending-the-library)
+- [10. Event aggregation and covariance](#10-event-aggregation-and-covariance)
 
 Everything lives in namespace `eec`. Include `SRothman/EECs/interface/EECs.h` for all calculators.
 
@@ -356,3 +357,16 @@ struct TotalWeight {
 - **Interface:** `static_assert(eec::AnglePolicy<MyAngle>)` (or the matching concept) checks it against the interface.
 - **CMSSW:** new test files must also be listed in `test/BuildFile.xml`. CMake globs `test/*.cc`.
 - **Compile-time errors:** `test/compile_fail/*.cc` must fail to compile with a given `static_assert` message. They run under CMake only, through `ctest`.
+
+## 10. Event aggregation and covariance
+`eec::CovarianceAccumulator` (`SRothman/EECs/interface/Covariance.h`) sums per-event histograms over flow-inclusive linear bins:
+H = Σₑ wₑ hₑ and C = Σₑ wₑ² hₑ hₑᵀ, plus Σw, Σw² and the event count.
+
+- Per event, call `beginEvent()`, then `add(bin, value)` any number of times (repeated bins are summed into hₑ before the outer product), then `endEvent(w)`.
+  An event with no `add` still counts in Σw, Σw² and the event count.
+- C is stored as a packed upper triangle (nBins(nBins+1)/2 doubles). Each event updates only the pairs of bins it touched, so it costs k(k+1)/2 for k touched bins.
+- The constructor takes `(nBins, maxBins)` and throws `std::invalid_argument` unless 1 ≤ nBins ≤ maxBins. `maxBins` bounds the memory.
+- `values()`, `covariance(i, j)` (symmetric), `denseCovariance()` (row-major nBins × nBins), `sumW()`, `sumW2()`, `nEvents()`.
+- `merge(other)` adds an accumulator over the same number of bins, for example one per stream.
+- `beginEvent()` discards a partial event left by an exception. Not thread-safe.
+- The mean-subtracted covariance is formed afterwards from these sums. `bench/bench_cov.cc` measures the per-event cost.

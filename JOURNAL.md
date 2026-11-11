@@ -9,6 +9,7 @@
 - [2026-11-11 Review round 3: de-duplication](#2026-11-11-review-round-3-de-duplication)
 - [2026-11-11 Inner-loop optimisation study](#2026-11-11-inner-loop-optimisation-study)
 - [2026-11-11 Peeled last level, rotating-jet benchmark](#2026-11-11-peeled-last-level-rotating-jet-benchmark)
+- [2026-11-11 CovarianceAccumulator](#2026-11-11-covarianceaccumulator)
 
 ## 2026-11-10 Initial implementation
 - Plan: `simulation/stepA.md` §A.1; decisions agreed with user are in README "Conventions".
@@ -120,3 +121,8 @@ Prototypes in scratch copies only; library unchanged. Dense, Energy/SumEnergy/De
   defaulted `Strategy` parameter (per calculator, tested in the same binary). Oracle comparison runs every output x loop x
   precompute for both; mutations of each path's symfactor fail >= 1 test. Which path runs is not observable in tests;
   benchmark: Unpeeled/HEAD PairBins N=3..6 0.99-1.03 (it is HEAD's loop), Peeled/HEAD as above.
+
+## 2026-11-11 CovarianceAccumulator
+- `interface/Covariance.h`: packed upper triangle; sparse update over the touched bins (sorted, so row-wise writes).
+- Bench (GCC 12, -O2): 2704 bins (52×52 E1C) costs 2.1 µs/event for 50 random adds, 68 µs for 300, and 1.07 ms with every bin touched; 52 bins, 52 adds: 0.6 µs.
+- Tests compare against a dense brute force (n = 1, 2, 7, 40; signed weights; repeated bins). Mutations (w for w², no merge of repeated bins, no diagonal, no reset of an abandoned event, merge skipping C) all fail the tests now; the abandoned-event mutation needed a stronger test that re-fills an abandoned bin.
