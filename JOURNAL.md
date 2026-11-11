@@ -5,6 +5,7 @@
 - [2026-11-10 Benchmark: pENC strategies and outputs](#2026-11-10-benchmark-penc-strategies-and-outputs)
 - [2026-11-10 Review fixes](#2026-11-10-review-fixes)
 - [2026-11-10 Strategy factorisation and update_extra](#2026-11-10-strategy-factorisation-and-update_extra)
+- [2026-11-11 Review round 2](#2026-11-11-review-round-2)
 
 ## 2026-11-10 Initial implementation
 - Plan: `simulation/stepA.md` §A.1; decisions agreed with user are in README "Conventions".
@@ -49,3 +50,19 @@ Findings:
 - Decided with user: `Strategy<Loop, Precompute>` plus the four old names as aliases; PairBins with an unbinned
   output is a compile error (default strategy now `DefaultFor<Output>`); `update_extra` without a matching
   `Extra::update` is a compile error (static_assert), checked by `test/compile_fail` ctest cases.
+
+## 2026-11-11 Review round 2
+- Decided with user: `update_extra` renamed `updateExtra`; |p| = 0 particles throw in `fillJetData` (pENC and E1C);
+  calculators stay `const` + `mutable` (callers must not share one across threads); stateless Weight/Norm/Angle kept.
+- Row-max loop (incremental per-depth row max, one comparison per leaf), bitwise-identical output, median of 5,
+  new/old time: PairBins N=3..5 1.55-1.83, N=6 0.90-1.02; Dense PairAngles N=3,4 1.00-1.20, N>=5 0.66-0.68;
+  Unbinned PairAngles N=3 1.15, N>=4 0.93-0.98. PairAngles N=5 M=50 with row-max (40 ms) is still 5x PairBins (8 ms).
+  Dropped: the leaf is not comparison-bound.
+- Extra axes (K=1 constant Extra, Dense, PairBins): binning the Extra costs ~2.5x (N=3 M=100: ~1000 us vs 406 us).
+  Tried `get_if` axis dispatch instead of `axis::variant::index`, for the Extra axes only (inlining it into the
+  axis-0 lookup slowed N=3 PairAngles ~1.5x). Interleaved, core-pinned, min of 5: new/old 0.88-1.05 across
+  N=2..5 and Regular/Log Extra axes, sign varying; rebuilding the same probe moved one ratio 0.85 -> 0.95, so code
+  layout effects are as large as the change. Not adopted.
+- Concepts (`interface/Concepts.h`) constrain all calculators; checked by `test/test_concepts.cc` and three
+  compile_fail cases. Mutations: dropping each of 4 constraints/clauses fails >= 1 test. New zero-|p| and count tests:
+  dropping the throw and a no-replacement loop each fail; a wrong `multichoose` (reserve only) passes, as intended.

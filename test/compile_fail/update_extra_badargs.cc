@@ -13,5 +13,5 @@ struct OneArgExtra {
 
 int main() {
   ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Unbinned, OneArgExtra> c(3, 1.0);
-  c.update_extra(0.5, 2);
+  c.updateExtra(0.5, 2);
 }

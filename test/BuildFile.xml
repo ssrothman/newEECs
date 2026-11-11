@@ -1,4 +1,4 @@
-<bin name="testSRothmanEECs" file="test_main.cc,test_policies.cc,test_binning_outputs.cc,test_penc.cc,test_e1c.cc,test_sum_rule.cc,test_warnings.cc">
+<bin name="testSRothmanEECs" file="test_main.cc,test_policies.cc,test_binning_outputs.cc,test_penc.cc,test_e1c.cc,test_sum_rule.cc,test_warnings.cc,test_concepts.cc">
   <use name="catch2"/>
   <use name="SRothman/EECs"/>
 </bin>

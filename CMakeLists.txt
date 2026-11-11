@@ -62,7 +62,10 @@ if(EEC_BUILD_TESTS)
   foreach(cf IN ITEMS
       "pairbins_unbinned|precompute::PairBins requires a binned output"
       "update_extra_missing|Extra has no update\\(\\) accepting these arguments"
-      "update_extra_badargs|Extra has no update\\(\\) accepting these arguments")
+      "update_extra_badargs|Extra has no update\\(\\) accepting these arguments"
+      "concept_bad_weight|required for the satisfaction of 'WeightPolicy<"
+      "concept_bad_frame|required for the satisfaction of 'FramePolicy<"
+      "concept_bad_extra_runtime|required for the satisfaction of 'ExtraPolicy<Extra, 3>'")
     string(REPLACE "|" ";" cf "${cf}")
     list(GET cf 0 name)
     list(GET cf 1 msg)

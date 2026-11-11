@@ -12,14 +12,14 @@
 
 namespace eec {
 
-  // Per-jet precomputed quantities shared by all correlators (structure of arrays).
+  // Per-jet inputs to the correlators (structure of arrays). Each calculator owns one and refills it per jet.
   struct JetData {
     double E_jet = 0;
     double n = 1;
     std::vector<double> w;  // (E_p / E_jet)^n
     std::vector<double> ux, uy, uz;
     std::vector<double> eta, phi;  // phi in [0, 2pi)
-    // Persists across jets so the ignored-externalNorm warning fires once per calculator.
+    // Per-calculator, not per-jet: fillJetData never resets it, so the warning fires once per calculator.
     bool warnedIgnoredExternalNorm = false;
 
     std::size_t size() const { return w.size(); }
@@ -54,6 +54,9 @@ namespace eec {
       }
       jd.w[i] = z;
       const double mod = p.modp();
+      // A zero (or NaN) |p| has no direction; its NaN angles would bin differently per strategy.
+      if (!(mod > 0))
+        throw std::invalid_argument("eec: particle with zero three-momentum");
       jd.ux[i] = p.px() / mod;
       jd.uy[i] = p.py() / mod;
       jd.uz[i] = p.pz() / mod;

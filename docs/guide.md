@@ -48,7 +48,7 @@ E1C entries always have symmetry factor 1.
 - The binned constructor checks the binning rank: it must be 1 + `Extra::K` for pENC and `Frame::D` for E1C.
 - The 12 upper bound on N exists because symmetry factors are computed in 32-bit integers.
 - `ProjectedENCRuntimeN` holds a `std::variant` of `ProjectedENC<2..6>` and dispatches with `std::visit`. The result type does not depend on N.
-- `ProjectedENC` and `ProjectedENCRuntimeN` have `update_extra(args...)`, which forwards to `Extra::update(args...)`
+- `ProjectedENC` and `ProjectedENCRuntimeN` have `updateExtra(args...)`, which forwards to `Extra::update(args...)`
   between jets ([9.4](#94-extra-coordinates)). If the Extra has no `update` accepting those arguments, the call fails to compile.
 - In `OnePointEC`, the frame object is passed on every call, so a per-jet frame (for example the boson rest frame) needs no rebuild of the calculator.
 
@@ -57,9 +57,10 @@ E1C entries always have symmetry factor 1.
 1. `fillJetData<Weight, Norm>` fills a `JetData`, a structure of arrays:
    - `E_jet` = `Norm::value(particles, externalNorm)`
    - `w[i]` = (`Weight::value(pᵢ)` / E_jet)ⁿ. `pow` is skipped when n = 1.
-   - `ux, uy, uz`: the unit three-momentum.
+   - `ux, uy, uz`: the unit three-momentum. A particle with zero three-momentum throws `std::invalid_argument`, for E1C too.
    - `eta`: pseudorapidity.
    - `phi`: azimuth in [0, 2π).
+   - `warnedIgnoredExternalNorm` is per-calculator state, not per-jet: it is never reset, so the ignored-`externalNorm` warning ([section 4](#norm-e_jet--eecnorm)) fires once per calculator.
 2. pENC only: the strategy may precompute an M×M matrix. It then walks the tuples, carrying the running weight
    product and θ_max, and calls `Output::Accumulator::fill` once per tuple or multiset.
    E1C: one fill per particle, at `frame(pᵢ)`.
@@ -70,6 +71,11 @@ E1C entries always have symmetry factor 1.
 ## 4. Policies
 
 All policies are compile-time types, so there is no virtual dispatch on the hot path.
+
+Each interface below is a C++20 concept in `SRothman/EECs/interface/Concepts.h`: `WeightPolicy`, `NormPolicy`,
+`AnglePolicy`, `ExtraPolicy<X, N>`, `FramePolicy` and `OutputPolicy<O, D>`. The calculators are constrained by them, so a
+policy that breaks its interface fails at the calculator's declaration with the name of the unsatisfied concept.
+`ProjectedENCRuntimeN` requires `ExtraPolicy<Extra, N>` for every N in 2…6.
 
 ### Weight E_p — `eec::weight`
 Interface: `static double value(const fastjet::PseudoJet&)`.
@@ -198,6 +204,7 @@ The default, `DefaultFor<Output>`, is `PairBins` for binned outputs and `PairAng
 | `norm::External` | `invalid_argument` | `externalNorm` not finite, or zero |
 | charge weights | `invalid_argument` | no `EECParticleInfo` |
 | `fillJetData` | `domain_error` | negative E_p with non-integer n |
+| `fillJetData` | `invalid_argument` | a particle with zero three-momentum |
 
 ## 9. Extending the library
 Each new policy is a plain type passed as a template argument. Nothing needs to be registered. The examples below
@@ -266,7 +273,7 @@ Requirements:
 - Indices may repeat.
 - The Extra is stored by value, constructed from the constructor's `extra` argument (default `Extra{}`), and called once per fill. It may hold configuration.
 - With a binned output, the binning needs 1 + K axes.
-- Optionally, it can provide `update(...)` with any signature. `calc.update_extra(args...)` forwards to it, so one calculator can change the Extra's configuration between jets. This changes values only, not K or the binning.
+- Optionally, it can provide `update(...)` with any signature. `calc.updateExtra(args...)` forwards to it, so one calculator can change the Extra's configuration between jets. This changes values only, not K or the binning.
 
 ```cpp
 // Extra coordinate with a value set between jets through update().
@@ -280,7 +287,7 @@ struct EventScale {
   }
 };
 // ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, EventScale> calc(1.0, binning);
-// calc.update_extra(rho);  // then calc(particles)
+// calc.updateExtra(rho);  // then calc(particles)
 ```
 
 ### 9.5 Frame (E1C)
@@ -335,5 +342,6 @@ struct TotalWeight {
 ### 9.7 Testing a new policy
 - **pENC:** add it to `compareAll` in `test/test_penc.cc`. That compares every output and strategy against an ordered-tuple oracle. The oracle needs a reference angle, or a reference Extra, computed independently from the `PseudoJet`s.
 - **Any weight or norm:** for n = 1 and E_jet = Σ E_p, the sum rule in `test/test_sum_rule.cc` checks the bookkeeping.
+- **Interface:** `static_assert(eec::AnglePolicy<MyAngle>)` (or the matching concept) checks it against the interface.
 - **CMSSW:** new test files must also be listed in `test/BuildFile.xml`. CMake globs `test/*.cc`.
 - **Compile-time errors:** `test/compile_fail/*.cc` must fail to compile with a given `static_assert` message. They run under CMake only, through `ctest`.

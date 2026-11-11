@@ -2,6 +2,7 @@
 #define SRothman_EECs_OnePointEC_h
 
 #include "SRothman/EECs/interface/Binning.h"
+#include "SRothman/EECs/interface/Concepts.h"
 #include "SRothman/EECs/interface/JetData.h"
 #include "SRothman/EECs/interface/Outputs.h"
 #include "SRothman/EECs/interface/Policies.h"
@@ -62,7 +63,8 @@ namespace eec {
   }  // namespace frame
 
   // One-point correlator sum_i (E_i/E_jet)^n delta(coords_i - coords). Not thread-safe.
-  template <class Weight, class Norm, class Frame, class Output>
+  template <WeightPolicy Weight, NormPolicy Norm, FramePolicy Frame, class Output>
+    requires OutputPolicy<Output, Frame::D>
   class OnePointEC {
   public:
     static constexpr std::size_t D = Frame::D;

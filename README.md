@@ -50,19 +50,4 @@ Calculators keep per-jet scratch space: use one instance per thread.
 - Merged sparse outputs keep a bin that was filled even if its weights cancel to zero.
 
 ## Extending
-See `docs/guide.md` for full documentation of policies, outputs, strategies and how to extend them.
-
-All configuration is compile-time policy structs:
-- particle weight E_p: `struct { static double value(const fastjet::PseudoJet&); }`
-- jet norm E_jet: `struct { static double value(const std::vector<PseudoJet>&, double external); }`, optionally with
-  `static constexpr bool usesExternalNorm`. If it is `false`, passing an `externalNorm` warns once per calculator
-  (`edm::LogWarning` under scram, `std::cerr` otherwise); without it the norm is assumed to use the value.
-- pair angle: `struct { static double pair(const JetData&, size_t i, size_t j); }` (>= 0, 0 on the diagonal)
-- extra pENC binning coordinates: `struct { static constexpr size_t K; template <size_t N> std::array<double, K> operator()(const JetData&, const std::array<uint32_t, N>&) const; }`,
-  permutation-symmetric; the binning then needs 1 + K axes (axis 0 is theta_max). An optional `update(...)` is
-  reached through the calculator's `update_extra(...)`.
-- E1C frame: class with `static constexpr size_t D` and `std::array<double, D> operator()(const PseudoJet&) const`.
-
-Strategies are `strategy::Strategy<Loop, Precompute>` with `loop::{Ordered, Multiset}` and
-`precompute::{None, PairAngles, PairBins}`; `Naive`, `Multiset`, `PairAngles`, `PairBins` are aliases, compared in `JOURNAL.md`.
-`precompute::PairBins` needs a binned output and an increasing axis 0 (the constructor throws for a decreasing one).
+`docs/guide.md` is the reference for the policy interfaces, outputs, strategies, errors and how to add new policies.

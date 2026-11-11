@@ -24,12 +24,23 @@ namespace {
     const double c = (a.px() * b.px() + a.py() * b.py() + a.pz() * b.pz()) / (a.modp() * b.modp());
     return std::acos(std::clamp(c, -1.0, 1.0));
   }
+  // Most tests use Energy weights, SumEnergy norm and DeltaR angles.
+  template <int N, class Out, class Extra = NoExtra, class Strat = strategy::DefaultFor<Out>>
+  using EDR = ProjectedENC<N, weight::Energy, norm::SumEnergy, angle::DeltaR, Out, Extra, Strat>;
+  template <class Out, class Extra = NoExtra>
+  using EDRRuntimeN = ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, Out, Extra>;
+
   using RefAngle = std::function<double(const PseudoJet&, const PseudoJet&)>;
   using RefExtra = std::function<double(const std::vector<std::size_t>&)>;
 
   template <class W, class Nrm>
-  std::vector<double> oracle(const std::vector<PseudoJet>& ps, int N, double n, const RefAngle& ang, const Binning& b,
-                             double ext = kNoExternalNorm, const RefExtra& extra = nullptr) {
+  std::vector<double> oracle(const std::vector<PseudoJet>& ps,
+                             int N,
+                             double n,
+                             const RefAngle& ang,
+                             const Binning& b,
+                             double ext = kNoExternalNorm,
+                             const RefExtra& extra = nullptr) {
     std::vector<double> out(b.totalBins(), 0.0);
     const std::size_t M = ps.size();
     if (M == 0)
@@ -146,8 +157,6 @@ namespace {
     }
   };
 
-  using EnergyDR2 = ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>;
-
   // Constant extra coordinate, reconfigurable through update().
   struct ConstExtra {
     static constexpr std::size_t K = 1;
@@ -178,7 +187,7 @@ TEST_CASE("pE2C analytic two-particle jet", "[penc]") {
   // Same eta so E is proportional to pt; DeltaR = 0.205.
   std::vector<PseudoJet> ps{fastjet::PtYPhiM(1, 0.4, 1.0), fastjet::PtYPhiM(3, 0.4, 1.205)};
   Binning b({RegularAxis(30, 0.0, 0.3)});
-  EnergyDR2 calc(1.0, b);
+  EDR<2, output::Dense> calc(1.0, b);
   const auto r = calc(ps);
   const double z1 = 0.25, z2 = 0.75;
   const auto b0 = b.binIndex(0, 0.0), b12 = b.binIndex(0, 0.205);
@@ -191,8 +200,8 @@ TEST_CASE("pE2C analytic two-particle jet", "[penc]") {
 
 TEST_CASE("pE3C analytic three-particle jet", "[penc]") {
   // DeltaR12 = 0.105, DeltaR23 = 0.155, DeltaR13 = 0.26.
-  std::vector<PseudoJet> ps{fastjet::PtYPhiM(1, 0.0, 0.0), fastjet::PtYPhiM(2, 0.0, 0.105),
-                            fastjet::PtYPhiM(3, 0.0, 0.26)};
+  std::vector<PseudoJet> ps{
+      fastjet::PtYPhiM(1, 0.0, 0.0), fastjet::PtYPhiM(2, 0.0, 0.105), fastjet::PtYPhiM(3, 0.0, 0.26)};
   Binning b({RegularAxis(30, 0.0, 0.3)});
   const double z1 = 1. / 6, z2 = 2. / 6, z3 = 3. / 6;
   auto check = [&](const std::vector<double>& v) {
@@ -202,16 +211,14 @@ TEST_CASE("pE3C analytic three-particle jet", "[penc]") {
     CHECK(v[b.binIndex(0, 0.26)] == Approx(3 * (z1 * z1 * z3 + z1 * z3 * z3) + 6 * z1 * z2 * z3));
     CHECK(sum(v) == Approx(1.0));
   };
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, NoExtra, strategy::PairBins> pb(1.0,
-                                                                                                                  b);
+  EDR<3, output::Dense, NoExtra, strategy::PairBins> pb(1.0, b);
   check(pb(ps).values);
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, NoExtra, strategy::Multiset> ms(1.0,
-                                                                                                                  b);
+  EDR<3, output::Dense, NoExtra, strategy::Multiset> ms(1.0, b);
   check(ms(ps).values);
 
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseUnmerged> un(1.0, b);
+  EDR<3, output::SparseUnmerged> un(1.0, b);
   const auto r = un(ps);
-  REQUIRE(r.entries.size() == 10);  // multichoose(3, 3)
+  REQUIRE(r.entries.size() == 10);  // C(5, 3) multisets for M = 3
   for (const auto& e : r.entries) {
     const auto th = b.unravel(e.bin)[0];
     if (th == b.binIndex(0, 0.0))
@@ -241,10 +248,11 @@ TEST_CASE("pENC matches ordered-tuple oracle", "[penc][oracle]") {
 TEST_CASE("pENC normalisation and multiset bookkeeping", "[penc]") {
   const auto ps = eectest::randomJet(14, 3);
   Binning b({LogAxis(10, 1e-2, 1.0)});
-  auto checkN = [&](auto calc, int N) {
+  // expected = C(M + N - 1, N) multisets for M = 14.
+  auto checkN = [&](auto calc, int N, std::size_t expected) {
     INFO("N=" << N);
     const auto r = calc(ps);
-    REQUIRE(r.entries.size() == detail::multichoose(ps.size(), N));
+    REQUIRE(r.entries.size() == expected);
     double ws = 0, syms = 0;
     for (const auto& e : r.entries) {
       ws += e.weight * e.symfactor;
@@ -253,11 +261,11 @@ TEST_CASE("pENC normalisation and multiset bookkeeping", "[penc]") {
     CHECK(ws == Approx(1.0));
     CHECK(syms == Approx(std::pow(double(ps.size()), N)));
   };
-  checkN(ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseUnmerged>(1.0, b), 2);
-  checkN(ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseUnmerged>(1.0, b), 3);
-  checkN(ProjectedENC<4, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseUnmerged>(1.0, b), 4);
-  checkN(ProjectedENC<5, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseUnmerged>(1.0, b), 5);
-  checkN(ProjectedENC<6, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Unbinned>(1.0), 6);
+  checkN(EDR<2, output::SparseUnmerged>(1.0, b), 2, 105);
+  checkN(EDR<3, output::SparseUnmerged>(1.0, b), 3, 560);
+  checkN(EDR<4, output::SparseUnmerged>(1.0, b), 4, 2380);
+  checkN(EDR<5, output::SparseUnmerged>(1.0, b), 5, 8568);
+  checkN(EDR<6, output::Unbinned>(1.0), 6, 27132);
 }
 
 TEST_CASE("pENC extra binning coordinate", "[penc][extra]") {
@@ -272,26 +280,23 @@ TEST_CASE("pENC extra binning coordinate", "[penc][extra]") {
     return std::isinf(m) ? 0.0 : m;
   };
   const auto ref = oracle<weight::Energy, norm::SumEnergy>(ps, 3, 1.0, refDeltaR, b, kNoExternalNorm, refExtra);
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, MinPairDR> dense(1.0, b);
+  EDR<3, output::Dense, MinPairDR> dense(1.0, b);
   requireClose(dense(ps).values, ref);
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged, MinPairDR, strategy::Multiset>
-      sparse(1.0, b);
+  EDR<3, output::SparseMerged, MinPairDR, strategy::Multiset> sparse(1.0, b);
   requireClose(toDense(sparse(ps), b), ref);
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Unbinned, MinPairDR> unb(1.0);
+  EDR<3, output::Unbinned, MinPairDR> unb(1.0);
   const auto u = unb(ps);
   requireClose(toDense(u, b), ref);
   for (const auto& e : u.entries)
     CHECK(e.coord[1] <= e.coord[0]);
-  CHECK_THROWS_AS((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, MinPairDR>(
-                      1.0, Binning({RegularAxis(12, 0.0, 1.2)}))),
-                  std::invalid_argument);
+  CHECK_THROWS_AS((EDR<3, output::Dense, MinPairDR>(1.0, Binning({RegularAxis(12, 0.0, 1.2)}))), std::invalid_argument);
 }
 
 TEST_CASE("pENC E_jet tracking and renormalisation", "[penc]") {
   const auto ps = eectest::randomJet(10, 5);
   Binning b({RegularAxis(20, 0.0, 1.0)});
   ProjectedENC<3, weight::Energy, norm::External, angle::DeltaR, output::Dense> ext(1.5, b);
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense> sum(1.5, b);
+  EDR<3, output::Dense> sum(1.5, b);
   const auto re = ext(ps, 100.0);
   const auto rs = sum(ps);
   CHECK(re.meta.E_jet == 100.0);
@@ -306,7 +311,7 @@ TEST_CASE("pENC E_jet tracking and renormalisation", "[penc]") {
 
 TEST_CASE("pENC degenerate jets", "[penc]") {
   Binning b({RegularAxis(10, 0.0, 1.0)});
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged> calc(1.0, b);
+  EDR<3, output::SparseMerged> calc(1.0, b);
   CHECK(calc({}).entries.empty());
   const auto r = calc({fastjet::PtYPhiM(5, 0.1, 0.2)});
   REQUIRE(r.entries.size() == 1);
@@ -314,12 +319,25 @@ TEST_CASE("pENC degenerate jets", "[penc]") {
   CHECK(r.entries[0].weight == Approx(1.0));
 }
 
+TEST_CASE("pENC rejects a zero-momentum particle", "[penc]") {
+  Binning b({RegularAxis(10, 0.0, 1.2)});
+  auto ps = eectest::randomJet(6, 8);
+  auto bad = ps;
+  bad.insert(bad.begin() + 2, PseudoJet(0, 0, 0, 0.14));
+  EDR<3, output::Dense> dr(1.0, b);
+  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::Angle3D, output::Dense> a3(1.0, b);
+  CHECK_THROWS_AS(dr(bad), std::invalid_argument);
+  CHECK_THROWS_AS(a3(bad), std::invalid_argument);
+  EDR<3, output::Dense> fresh(1.0, b);
+  requireClose(dr(ps).values, fresh(ps).values);
+}
+
 TEST_CASE("pENC calculator reuse across jets", "[penc]") {
   Binning b({RegularAxis(15, 0.0, 1.2)});
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged> reused(1.0, b);
+  EDR<3, output::SparseMerged> reused(1.0, b);
   for (unsigned seed = 0; seed < 4; ++seed) {
     const auto ps = eectest::randomJet(5 + 3 * seed, 100 + seed);
-    ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged> fresh(1.0, b);
+    EDR<3, output::SparseMerged> fresh(1.0, b);
     requireClose(toDense(reused(ps), b), toDense(fresh(ps), b));
   }
 }
@@ -327,42 +345,42 @@ TEST_CASE("pENC calculator reuse across jets", "[penc]") {
 TEST_CASE("runtime-N dispatcher matches compile-time N", "[penc][runtime]") {
   const auto ps = eectest::randomJet(10, 21);
   Binning b({LogAxis(15, 1e-2, 1.5)});
-  ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense> r3(3, 1.0, b), r5(5, 1.0, b);
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense> c3(1.0, b);
-  ProjectedENC<5, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense> c5(1.0, b);
+  EDRRuntimeN<output::Dense> r3(3, 1.0, b), r5(5, 1.0, b);
+  EDR<3, output::Dense> c3(1.0, b);
+  EDR<5, output::Dense> c5(1.0, b);
   requireClose(r3(ps).values, c3(ps).values);
   requireClose(r5(ps).values, c5(ps).values);
   CHECK(r5(ps).meta.N == 5);
-  ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Unbinned> u4(4, 1.0);
-  CHECK(u4(ps).entries.size() == detail::multichoose(ps.size(), 4));
-  CHECK_THROWS_AS((ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>(7, 1.0, b)),
-                  std::invalid_argument);
+  EDRRuntimeN<output::Unbinned> u4(4, 1.0);
+  CHECK(u4(ps).entries.size() == 715);  // C(13, 4) multisets for M = 10
+  CHECK_THROWS_AS((EDRRuntimeN<output::Dense>(7, 1.0, b)), std::invalid_argument);
 }
 
 TEST_CASE("PairBins rejects a decreasing axis 0", "[penc][strategy]") {
   const auto ps = eectest::randomJet(9, 7);
   for (const Axis& ax : {Axis(RegularAxis(10, 1.2, 0.0)), Axis(LogAxis(10, 1.5, 1e-2))}) {
     const Binning b({ax});
-    CHECK_THROWS_AS((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>(1.0, b)),
-                    std::invalid_argument);
-    CHECK_THROWS_AS((ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged>(3, 1.0, b)),
-                    std::invalid_argument);
-    CHECK_THROWS_AS((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, NoExtra,
-                                  strategy::Strategy<strategy::loop::Ordered, strategy::precompute::PairBins>>(1.0, b)),
-                    std::invalid_argument);
+    CHECK_THROWS_AS((EDR<3, output::Dense>(1.0, b)), std::invalid_argument);
+    CHECK_THROWS_AS((EDRRuntimeN<output::SparseMerged>(3, 1.0, b)), std::invalid_argument);
+    CHECK_THROWS_AS(
+        (EDR<3, output::Dense, NoExtra, strategy::Strategy<strategy::loop::Ordered, strategy::precompute::PairBins>>(
+            1.0, b)),
+        std::invalid_argument);
     // Strategies that bin each tuple's theta_max directly handle a decreasing axis correctly.
-    compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::PairAngles>(ps, 1.0, refDeltaR, b);
-    compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::Multiset>(ps, 1.0, refDeltaR, b);
+    compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::PairAngles>(
+        ps, 1.0, refDeltaR, b);
+    compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::Multiset>(
+        ps, 1.0, refDeltaR, b);
   }
   // Only axis 0 is constrained.
-  CHECK_NOTHROW((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, MinPairDR>(
-      1.0, Binning({RegularAxis(12, 0.0, 1.2), RegularAxis(6, 0.6, 0.0)}))));
+  CHECK_NOTHROW(
+      (EDR<3, output::Dense, MinPairDR>(1.0, Binning({RegularAxis(12, 0.0, 1.2), RegularAxis(6, 0.6, 0.0)}))));
 }
 
 TEST_CASE("pENC calculator is reusable after a policy throws mid-jet", "[penc][outputs]") {
   const auto ps = eectest::randomJet(10, 7);
   Binning b({RegularAxis(12, 0.0, 1.2), RegularAxis(4, 0.0, 1.0)});
-  using Calc = ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged, ThrowingExtra>;
+  using Calc = EDR<3, output::SparseMerged, ThrowingExtra>;
   Calc reused(1.0, b, ThrowingExtra{5});
   CHECK_THROWS_AS(reused(ps), std::runtime_error);
   Calc fresh(1.0, b);
@@ -380,7 +398,7 @@ TEST_CASE("strategy aliases and output-dependent default", "[penc][strategy]") {
   STATIC_REQUIRE(std::is_same_v<DefaultFor<output::Unbinned>, PairAngles>);
 }
 
-TEST_CASE("update_extra reconfigures Extra between jets", "[penc][extra]") {
+TEST_CASE("updateExtra reconfigures Extra between jets", "[penc][extra]") {
   const auto ps = eectest::randomJet(8, 4);
   Binning b({RegularAxis(12, 0.0, 1.2), RegularAxis(4, 0.0, 1.0)});
   auto extraBinWeight = [&](const DenseResult& r, double x) {
@@ -391,14 +409,14 @@ TEST_CASE("update_extra reconfigures Extra between jets", "[penc][extra]") {
         s += r.values[lin];
     return s;
   };
-  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, ConstExtra> calc(1.0, b, ConstExtra{0.1});
+  EDR<3, output::Dense, ConstExtra> calc(1.0, b, ConstExtra{0.1});
   CHECK(extraBinWeight(calc(ps), 0.1) == Approx(1.0));
-  calc.update_extra(0.8);
+  calc.updateExtra(0.8);
   const auto r = calc(ps);
   CHECK(extraBinWeight(r, 0.8) == Approx(1.0));
   CHECK(extraBinWeight(r, 0.1) == 0);
 
-  ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, ConstExtra> rt(4, 1.0, b);
-  rt.update_extra(0.6);
+  EDRRuntimeN<output::Dense, ConstExtra> rt(4, 1.0, b);
+  rt.updateExtra(0.6);
   CHECK(extraBinWeight(rt(ps), 0.6) == Approx(1.0));
 }

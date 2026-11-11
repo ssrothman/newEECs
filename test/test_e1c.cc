@@ -41,8 +41,8 @@ TEST_CASE("BoostRotate axes: rotated frame and orthogonalisation", "[e1c]") {
 TEST_CASE("BoostRotate boosts into the rest frame", "[e1c]") {
   // Two-body decay along rest-frame direction (theta0, phi0), then boosted along lab z.
   const double m = 91.0, theta0 = 0.7, phi0 = 0.4, E = m / 2;
-  const PseudoJet d1(E * std::sin(theta0) * std::cos(phi0), E * std::sin(theta0) * std::sin(phi0),
-                     E * std::cos(theta0), E);
+  const PseudoJet d1(
+      E * std::sin(theta0) * std::cos(phi0), E * std::sin(theta0) * std::sin(phi0), E * std::cos(theta0), E);
   const PseudoJet d2(-d1.px(), -d1.py(), -d1.pz(), E);
   const PseudoJet moving(0, 0, 200, std::sqrt(200 * 200 + m * m));
   PseudoJet l1(d1), l2(d2);
@@ -90,4 +90,10 @@ TEST_CASE("OnePointEC weights and outputs", "[e1c]") {
   OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::SparseMerged> sp(1.0, b);
   const auto s = sp(ps, f);
   CHECK(s.entries.size() == 3);
+}
+
+TEST_CASE("OnePointEC rejects a zero-momentum particle", "[e1c]") {
+  const frame::BoostRotate f(PseudoJet(0, 0, 0, 91.0), {{0, 0, 1}}, {{1, 0, 0}});
+  OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::Unbinned> e1c(1.0);
+  CHECK_THROWS_AS(e1c({PseudoJet(1, 0, 0, 1), PseudoJet(0, 0, 0, 0.14)}, f), std::invalid_argument);
 }

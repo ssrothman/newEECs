@@ -3,6 +3,7 @@
 
 #include "SRothman/EECs/interface/Angles.h"
 #include "SRothman/EECs/interface/Binning.h"
+#include "SRothman/EECs/interface/Concepts.h"
 #include "SRothman/EECs/interface/JetData.h"
 #include "SRothman/EECs/interface/Outputs.h"
 #include "SRothman/EECs/interface/Policies.h"
@@ -84,12 +85,13 @@ namespace eec {
 
   // Projected N-point correlator. Not thread-safe: use one instance per thread.
   template <int N,
-            class Weight,
-            class Norm,
-            class Angle,
+            WeightPolicy Weight,
+            NormPolicy Norm,
+            AnglePolicy Angle,
             class Output,
             class Extra = NoExtra,
             class Strategy = strategy::DefaultFor<Output>>
+    requires ExtraPolicy<Extra, N> && OutputPolicy<Output, 1 + Extra::K>
   class ProjectedENC {
     static_assert(N >= 1 && N <= 12, "symmetry factors are computed in 32-bit integers");
     static_assert(detail::isStrategy<Strategy>, "Strategy must be strategy::Strategy<Loop, Precompute>");
@@ -119,9 +121,9 @@ namespace eec {
 
     // Forwards to Extra::update between jets.
     template <class... Args>
-    void update_extra(Args&&... args) {
+    void updateExtra(Args&&... args) {
       constexpr bool ok = requires(Extra& e, Args&&... a) { e.update(std::forward<Args>(a)...); };
-      static_assert(ok, "eec::ProjectedENC::update_extra: Extra has no update() accepting these arguments");
+      static_assert(ok, "eec::ProjectedENC::updateExtra: Extra has no update() accepting these arguments");
       if constexpr (ok)
         extra_.update(std::forward<Args>(args)...);
     }

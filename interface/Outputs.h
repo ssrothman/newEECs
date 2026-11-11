@@ -58,7 +58,7 @@ namespace eec {
   };
 
   // Output policies. Each provides `binned`, `Result<D>` and `Accumulator<D>` with
-  // begin(...), fill(...), finish(meta). Accumulators keep scratch between jets.
+  // begin(...), fill(...), finish(meta). begin() must discard state left by a jet that threw before finish().
   namespace output {
 
     struct Dense {

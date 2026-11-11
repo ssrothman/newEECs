@@ -10,12 +10,14 @@
 namespace eec {
 
   // ProjectedENC with N chosen at runtime (2 <= N <= 6); other parameters stay compile-time.
-  template <class Weight,
-            class Norm,
-            class Angle,
+  template <WeightPolicy Weight,
+            NormPolicy Norm,
+            AnglePolicy Angle,
             class Output,
             class Extra = NoExtra,
             class Strategy = strategy::DefaultFor<Output>>
+    requires ExtraPolicy<Extra, 2> && ExtraPolicy<Extra, 3> && ExtraPolicy<Extra, 4> && ExtraPolicy<Extra, 5> &&
+             ExtraPolicy<Extra, 6> && OutputPolicy<Output, 1 + Extra::K>
   class ProjectedENCRuntimeN {
     template <int N>
     using Impl = ProjectedENC<N, Weight, Norm, Angle, Output, Extra, Strategy>;
@@ -37,8 +39,8 @@ namespace eec {
     }
 
     template <class... Args>
-    void update_extra(Args&&... args) {
-      std::visit([&](auto& c) { c.update_extra(std::forward<Args>(args)...); }, impl_);
+    void updateExtra(Args&&... args) {
+      std::visit([&](auto& c) { c.updateExtra(std::forward<Args>(args)...); }, impl_);
     }
 
   private:
