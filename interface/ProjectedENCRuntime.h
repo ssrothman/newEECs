@@ -4,6 +4,7 @@
 #include "SRothman/EECs/interface/ProjectedENC.h"
 
 #include <stdexcept>
+#include <utility>
 #include <variant>
 
 namespace eec {
@@ -14,7 +15,7 @@ namespace eec {
             class Angle,
             class Output,
             class Extra = NoExtra,
-            class Strategy = strategy::PairBins>
+            class Strategy = strategy::DefaultFor<Output>>
   class ProjectedENCRuntimeN {
     template <int N>
     using Impl = ProjectedENC<N, Weight, Norm, Angle, Output, Extra, Strategy>;
@@ -33,6 +34,11 @@ namespace eec {
 
     Result operator()(const std::vector<fastjet::PseudoJet>& particles, double externalNorm = kNoExternalNorm) const {
       return std::visit([&](const auto& c) { return c(particles, externalNorm); }, impl_);
+    }
+
+    template <class... Args>
+    void update_extra(Args&&... args) {
+      std::visit([&](auto& c) { c.update_extra(std::forward<Args>(args)...); }, impl_);
     }
 
   private:

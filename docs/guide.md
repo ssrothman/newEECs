@@ -21,7 +21,7 @@ pENC(θ) = Σ over ordered N-tuples (p₁…p_N), drawn with replacement, of ∏
 
 where θ_max is the largest pairwise angle θ_ij in the tuple (0 when all entries are the same particle).
 
-A tuple's weight and θ_max do not depend on the order of its entries. So, except under `strategy::Naive`, the
+A tuple's weight and θ_max do not depend on the order of its entries. So, except with the `loop::Ordered` loop, the
 library evaluates each multiset i₁ ≤ … ≤ i_N once and attaches the multinomial symmetry factor
 N! / ∏ₖ mₖ!, where mₖ are the multiplicities of the distinct indices. Example for N = 3: (a,a,a) → 1,
 (a,a,b) → 3, (a,b,c) → 6.
@@ -40,7 +40,7 @@ E1C entries always have symmetry factor 1.
 
 | Class | Template parameters | Constructors | Call |
 |---|---|---|---|
-| `ProjectedENC` | `<int N, Weight, Norm, Angle, Output, Extra = NoExtra, Strategy = strategy::PairBins>`, with 1 ≤ N ≤ 12 | binned output: `(n, Binning, Extra = {})`; unbinned: `(n, Extra = {})` | `operator()(particles, externalNorm = kNoExternalNorm)` |
+| `ProjectedENC` | `<int N, Weight, Norm, Angle, Output, Extra = NoExtra, Strategy = strategy::DefaultFor<Output>>`, with 1 ≤ N ≤ 12 | binned output: `(n, Binning, Extra = {})`; unbinned: `(n, Extra = {})` | `operator()(particles, externalNorm = kNoExternalNorm)` |
 | `ProjectedENCRuntimeN` | same, without `N` | `(N, n, Binning, Extra = {})` / `(N, n, Extra = {})`, with 2 ≤ N ≤ 6 | same as above |
 | `OnePointEC` | `<Weight, Norm, Frame, Output>` | `(n, Binning)` / `(n)` | `operator()(particles, frame, externalNorm = kNoExternalNorm)` |
 
@@ -48,6 +48,8 @@ E1C entries always have symmetry factor 1.
 - The binned constructor checks the binning rank: it must be 1 + `Extra::K` for pENC and `Frame::D` for E1C.
 - The 12 upper bound on N exists because symmetry factors are computed in 32-bit integers.
 - `ProjectedENCRuntimeN` holds a `std::variant` of `ProjectedENC<2..6>` and dispatches with `std::visit`. The result type does not depend on N.
+- `ProjectedENC` and `ProjectedENCRuntimeN` have `update_extra(args...)`, which forwards to `Extra::update(args...)`
+  between jets ([9.4](#94-extra-coordinates)). If the Extra has no `update` accepting those arguments, the call fails to compile.
 - In `OnePointEC`, the frame object is passed on every call, so a per-jet frame (for example the boson rest frame) needs no rebuild of the calculator.
 
 ## 3. Per-jet data flow
@@ -132,25 +134,41 @@ Policies are in `eec::output`.
 | `Unbinned` | `UnbinnedResult<D>{meta, entries}` | `UnbinnedEntry<D>{coord, weight, symfactor}`, one per fill |
 
 - In unmerged outputs, `weight` is the bare product ∏(E_p/E_jet)ⁿ, and `symfactor` is stored separately.
-- One fill means one multiset, giving multichoose(M, N) entries. Under `strategy::Naive` it means one ordered tuple, giving Mᴺ entries, each with `symfactor` = 1.
+- One fill means one multiset, giving multichoose(M, N) entries. With the `loop::Ordered` loop (for example `strategy::Naive`) it means one ordered tuple, giving Mᴺ entries, each with `symfactor` = 1.
 - Merged outputs keep a bin that was filled even if its weights cancel to zero. Signed (charge) weights can do this.
 - `Unbinned` coordinates are (θ_max, extra₀, …) for pENC and `frame(p)` for E1C.
 
 ## 6. Strategies
-These choose how pENC enumerates tuples; they live in `eec::strategy`. All strategies give the same histogram. The
-tests compare each one against an ordered-tuple oracle.
+A strategy sets how pENC enumerates tuples. It is `strategy::Strategy<Loop, Precompute>`, combining one loop with
+one per-jet precompute; everything lives in `eec::strategy`. Every combination gives the same histogram. The tests
+compare all of them against an ordered-tuple oracle.
 
-| Strategy | Loop | Per-jet precompute | Notes |
-|---|---|---|---|
-| `Naive` | all Mᴺ ordered tuples, symfactor 1 | none | reference only |
-| `Multiset` | i₁ ≤ … ≤ i_N | none | computes `Angle::pair` on the fly |
-| `PairAngles` | multisets | M×M `double` angle matrix | |
-| `PairBins` (default) | multisets | M×M `uint32` matrix of axis-0 bins | uses bin(max θ) = max bin(θ). Requires an increasing axis 0, and the constructor throws otherwise. With an unbinned output it behaves as `PairAngles`. |
+| Loop (`strategy::loop::`) | Tuples visited | Fill count |
+|---|---|---|
+| `Ordered` | all Mᴺ ordered tuples | Mᴺ, symfactor 1 |
+| `Multiset` | i₁ ≤ … ≤ i_N | multichoose(M, N), multinomial symfactor |
 
-- `PairBins` is 4.5–9× faster than `PairAngles` for N = 3–6 in the `JOURNAL.md` benchmarks, because it avoids an axis lookup per tuple.
-- Cost grows as multichoose(M, N), and as Mᴺ for `Naive`.
+| Precompute (`strategy::precompute::`) | Per-jet work | Notes |
+|---|---|---|
+| `None` | none | computes `Angle::pair` on the fly |
+| `PairAngles` | M×M `double` angle matrix | |
+| `PairBins` | M×M `uint32` matrix of axis-0 bins | uses bin(max θ) = max bin(θ). Needs a binned output (a `static_assert` otherwise) and an increasing axis 0 (the constructor throws otherwise). |
+
+Named aliases:
+
+| Alias | Loop | Precompute |
+|---|---|---|
+| `Naive` | `Ordered` | `None` |
+| `Multiset` | `Multiset` | `None` |
+| `PairAngles` | `Multiset` | `PairAngles` |
+| `PairBins` | `Multiset` | `PairBins` |
+
+The default, `DefaultFor<Output>`, is `PairBins` for binned outputs and `PairAngles` for unbinned ones.
+
+- `PairBins` is 4.5–9× faster than `PairAngles` for N = 3–6 in the `JOURNAL.md` benchmarks (both with the multiset loop), because it avoids an axis lookup per tuple.
+- Cost grows as multichoose(M, N) with the `Multiset` loop and as Mᴺ with `Ordered`.
 - Unmerged and unbinned outputs store one entry per fill, so their memory grows the same way.
-- The strategy set is closed: an unknown type fails a `static_assert`.
+- Loops and precomputes are closed sets: an unknown type fails a `static_assert`.
 
 ## 7. Binning
 `Binning(std::vector<Axis>)` is a runtime binning built from boost::histogram axes:
@@ -173,7 +191,7 @@ tests compare each one against an ordered-tuple oracle.
 |---|---|---|
 | `Binning` | `invalid_argument` | no axes; more than 2³²−1 bins |
 | `Binning::toHistogram` | `invalid_argument` | size of the values vector ≠ `totalBins()` |
-| `ProjectedENC` constructor | `invalid_argument` | rank ≠ 1 + K; `PairBins` with a decreasing axis 0 |
+| `ProjectedENC` constructor | `invalid_argument` | rank ≠ 1 + K; `precompute::PairBins` with a decreasing axis 0 |
 | `ProjectedENCRuntimeN` constructor | `invalid_argument` | N ∉ [2, 6] |
 | `OnePointEC` constructor | `invalid_argument` | rank ≠ `Frame::D` |
 | `frame::BoostRotate` | `invalid_argument` | `rest` not timelike; degenerate axis |
@@ -218,7 +236,7 @@ struct DeltaEta {
 ```
 Requirements:
 - The angle must be ≥ 0, with `pair(d, i, i) == 0`. θ_max starts from 0, and the matrix diagonals are set to 0.
-- It must be symmetric, `pair(i, j) == pair(j, i)`. The matrices fill only i < j, while `Naive` and `Multiset` call it in either order and with i == j.
+- It must be symmetric, `pair(i, j) == pair(j, i)`. The matrices fill only i < j, while precompute `None` calls it with i ≤ j (`Multiset` loop) or in any order (`Ordered` loop), including i == j.
 - It can use only `JetData` fields. If you need another per-particle quantity (for example rapidity), add a field to `JetData` and fill it in `fillJetData`.
 
 ### 9.4 Extra coordinates
@@ -244,10 +262,26 @@ struct MinDeltaR {
 //     calc(1.0, Binning({RegularAxis(20, 0.0, 1.0), RegularAxis(10, 0.0, 1.0)}));
 ```
 Requirements:
-- The result must be symmetric under permutations of `idx`. One fill stands for all orderings of a multiset, and `idx` arrives sorted non-decreasing except under `Naive`.
+- The result must be symmetric under permutations of `idx`. One fill stands for all orderings of a multiset, and `idx` arrives sorted non-decreasing except with the `Ordered` loop.
 - Indices may repeat.
 - The Extra is stored by value, constructed from the constructor's `extra` argument (default `Extra{}`), and called once per fill. It may hold configuration.
 - With a binned output, the binning needs 1 + K axes.
+- Optionally, it can provide `update(...)` with any signature. `calc.update_extra(args...)` forwards to it, so one calculator can change the Extra's configuration between jets. This changes values only, not K or the binning.
+
+```cpp
+// Extra coordinate with a value set between jets through update().
+struct EventScale {
+  static constexpr std::size_t K = 1;
+  double scale = 0;
+  void update(double s) { scale = s; }
+  template <std::size_t N>
+  std::array<double, 1> operator()(const eec::JetData&, const std::array<std::uint32_t, N>&) const {
+    return {{scale}};
+  }
+};
+// ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, EventScale> calc(1.0, binning);
+// calc.update_extra(rho);  // then calc(particles)
+```
 
 ### 9.5 Frame (E1C)
 ```cpp
@@ -302,3 +336,4 @@ struct TotalWeight {
 - **pENC:** add it to `compareAll` in `test/test_penc.cc`. That compares every output and strategy against an ordered-tuple oracle. The oracle needs a reference angle, or a reference Extra, computed independently from the `PseudoJet`s.
 - **Any weight or norm:** for n = 1 and E_jet = Σ E_p, the sum rule in `test/test_sum_rule.cc` checks the bookkeeping.
 - **CMSSW:** new test files must also be listed in `test/BuildFile.xml`. CMake globs `test/*.cc`.
+- **Compile-time errors:** `test/compile_fail/*.cc` must fail to compile with a given `static_assert` message. They run under CMake only, through `ctest`.

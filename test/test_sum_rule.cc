@@ -66,12 +66,20 @@ namespace {
     CHECK(std::abs(s - 1.0) < kTol);
   }
 
+  template <int N, class W, class Nrm, class Out, class Loop>
+  void checkLoop(const std::vector<PseudoJet>& ps, const Binning& b) {
+    using strategy::Strategy;
+    namespace pre = strategy::precompute;
+    checkOne<N, W, Nrm, Out, Strategy<Loop, pre::None>>(ps, b);
+    checkOne<N, W, Nrm, Out, Strategy<Loop, pre::PairAngles>>(ps, b);
+    if constexpr (Out::binned)
+      checkOne<N, W, Nrm, Out, Strategy<Loop, pre::PairBins>>(ps, b);
+  }
+
   template <int N, class W, class Nrm, class Out>
   void checkStrategies(const std::vector<PseudoJet>& ps, const Binning& b) {
-    checkOne<N, W, Nrm, Out, strategy::Naive>(ps, b);
-    checkOne<N, W, Nrm, Out, strategy::Multiset>(ps, b);
-    checkOne<N, W, Nrm, Out, strategy::PairAngles>(ps, b);
-    checkOne<N, W, Nrm, Out, strategy::PairBins>(ps, b);
+    checkLoop<N, W, Nrm, Out, strategy::loop::Ordered>(ps, b);
+    checkLoop<N, W, Nrm, Out, strategy::loop::Multiset>(ps, b);
   }
 
   template <int N, class W, class Nrm>

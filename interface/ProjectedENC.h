@@ -14,20 +14,43 @@
 #include <cstdint>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace eec {
 
+  // A strategy is a tuple loop combined with a per-jet precompute; any combination is valid,
+  // except that precompute::PairBins needs a binned output.
   namespace strategy {
-    // Ordered M^N loop, one fill per ordered tuple with symfactor 1. Reference only.
-    struct Naive {};
-    // Multiset loop i1 <= ... <= iN, pair angles computed on the fly.
-    struct Multiset {};
-    // Multiset loop with a precomputed M x M pair-angle matrix.
-    struct PairAngles {};
-    // Multiset loop with a precomputed M x M matrix of axis-0 bins, using
-    // bin(max theta) == max bin(theta) for increasing axes. Falls back to PairAngles if unbinned.
-    struct PairBins {};
+    namespace loop {
+      // All M^N ordered tuples, one fill each with symfactor 1.
+      struct Ordered {};
+      // Multisets i1 <= ... <= iN, one fill each with its multinomial symfactor.
+      struct Multiset {};
+    }  // namespace loop
+
+    namespace precompute {
+      // Pair angles computed on the fly.
+      struct None {};
+      // M x M pair-angle matrix.
+      struct PairAngles {};
+      // M x M matrix of axis-0 bins, using bin(max theta) == max bin(theta) for increasing axes.
+      struct PairBins {};
+    }  // namespace precompute
+
+    template <class Loop, class Precompute>
+    struct Strategy {
+      using loop_type = Loop;
+      using precompute_type = Precompute;
+    };
+
+    using Naive = Strategy<loop::Ordered, precompute::None>;
+    using Multiset = Strategy<loop::Multiset, precompute::None>;
+    using PairAngles = Strategy<loop::Multiset, precompute::PairAngles>;
+    using PairBins = Strategy<loop::Multiset, precompute::PairBins>;
+
+    template <class Output>
+    using DefaultFor = std::conditional_t<Output::binned, PairBins, PairAngles>;
   }  // namespace strategy
 
   // Extra binning coordinates: K values computed from the tuple's particle indices.
@@ -42,6 +65,11 @@ namespace eec {
 
   namespace detail {
     constexpr std::uint32_t factorial(int n) { return n <= 1 ? 1u : static_cast<std::uint32_t>(n) * factorial(n - 1); }
+
+    template <class>
+    inline constexpr bool isStrategy = false;
+    template <class L, class P>
+    inline constexpr bool isStrategy<strategy::Strategy<L, P>> = true;
 
     // Number of multisets of size N drawn from M elements.
     inline std::size_t multichoose(std::size_t M, int N) {
@@ -61,9 +89,10 @@ namespace eec {
             class Angle,
             class Output,
             class Extra = NoExtra,
-            class Strategy = strategy::PairBins>
+            class Strategy = strategy::DefaultFor<Output>>
   class ProjectedENC {
     static_assert(N >= 1 && N <= 12, "symmetry factors are computed in 32-bit integers");
+    static_assert(detail::isStrategy<Strategy>, "Strategy must be strategy::Strategy<Loop, Precompute>");
 
   public:
     static constexpr std::size_t K = Extra::K;
@@ -78,7 +107,7 @@ namespace eec {
       if constexpr (kPairBins) {
         const auto& ax = binning_.axis(0);
         if (!(ax.value(0) < ax.value(ax.size())))
-          throw std::invalid_argument("eec::ProjectedENC: strategy::PairBins requires an increasing axis 0");
+          throw std::invalid_argument("eec::ProjectedENC: precompute::PairBins requires an increasing axis 0");
       }
     }
 
@@ -88,10 +117,19 @@ namespace eec {
 
     const Binning& binning() const { return binning_; }
 
+    // Forwards to Extra::update between jets.
+    template <class... Args>
+    void update_extra(Args&&... args) {
+      constexpr bool ok = requires(Extra& e, Args&&... a) { e.update(std::forward<Args>(a)...); };
+      static_assert(ok, "eec::ProjectedENC::update_extra: Extra has no update() accepting these arguments");
+      if constexpr (ok)
+        extra_.update(std::forward<Args>(args)...);
+    }
+
     Result operator()(const std::vector<fastjet::PseudoJet>& particles, double externalNorm = kNoExternalNorm) const {
       fillJetData<Weight, Norm>(jd_, particles, n_, externalNorm);
       const std::size_t M = jd_.size();
-      const std::size_t expected = kNaive ? ipow(M) : detail::multichoose(M, N);
+      const std::size_t expected = kOrdered ? ipow(M) : detail::multichoose(M, N);
       if constexpr (Output::binned)
         acc_.begin(binning_, expected);
       else
@@ -105,12 +143,15 @@ namespace eec {
     }
 
   private:
-    static constexpr bool kNaive = std::is_same_v<Strategy, strategy::Naive>;
-    static constexpr bool kPairBins = std::is_same_v<Strategy, strategy::PairBins> && Output::binned;
-    static constexpr bool kAngleMatrix = std::is_same_v<Strategy, strategy::PairAngles> ||
-                                         (std::is_same_v<Strategy, strategy::PairBins> && !Output::binned);
-    static_assert(kNaive || kPairBins || kAngleMatrix || std::is_same_v<Strategy, strategy::Multiset>,
-                  "unknown strategy");
+    using Loop = typename Strategy::loop_type;
+    using Precompute = typename Strategy::precompute_type;
+    static constexpr bool kOrdered = std::is_same_v<Loop, strategy::loop::Ordered>;
+    static constexpr bool kPairBins = std::is_same_v<Precompute, strategy::precompute::PairBins>;
+    static constexpr bool kAngleMatrix = std::is_same_v<Precompute, strategy::precompute::PairAngles>;
+    static_assert(kOrdered || std::is_same_v<Loop, strategy::loop::Multiset>, "unknown strategy loop");
+    static_assert(kPairBins || kAngleMatrix || std::is_same_v<Precompute, strategy::precompute::None>,
+                  "unknown strategy precompute");
+    static_assert(!kPairBins || Output::binned, "precompute::PairBins requires a binned output");
     static constexpr std::uint32_t kFactorial = detail::factorial(N);
 
     using MaxT = std::conditional_t<kPairBins, std::uint32_t, double>;
@@ -174,7 +215,7 @@ namespace eec {
         for (int k = 0; k < d; ++k)
           m = std::max(m, pairMax(idx[k], j));
         std::uint32_t r = 1;
-        if constexpr (d > 0 && !kNaive) {
+        if constexpr (d > 0 && !kOrdered) {
           if (j == idx[d - 1])
             r = run + 1;
         }
@@ -182,12 +223,12 @@ namespace eec {
         if constexpr (d + 1 == N)
           leaf(idx, w, m, dn);
         else
-          recurse<d + 1>(kNaive ? 0 : j, w, m, dn, r, idx);
+          recurse<d + 1>(kOrdered ? 0 : j, w, m, dn, r, idx);
       }
     }
 
     void leaf(const std::array<std::uint32_t, N>& idx, double w, MaxT m, std::uint32_t den) const {
-      const std::uint32_t sym = kNaive ? 1u : kFactorial / den;
+      const std::uint32_t sym = kOrdered ? 1u : kFactorial / den;
       if constexpr (Output::binned) {
         std::uint32_t bin;
         if constexpr (kPairBins)

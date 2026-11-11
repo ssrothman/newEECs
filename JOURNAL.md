@@ -4,6 +4,7 @@
 - [2026-11-10 Initial implementation](#2026-11-10-initial-implementation)
 - [2026-11-10 Benchmark: pENC strategies and outputs](#2026-11-10-benchmark-penc-strategies-and-outputs)
 - [2026-11-10 Review fixes](#2026-11-10-review-fixes)
+- [2026-11-10 Strategy factorisation and update_extra](#2026-11-10-strategy-factorisation-and-update_extra)
 
 ## 2026-11-10 Initial implementation
 - Plan: `simulation/stepA.md` §A.1; decisions agreed with user are in README "Conventions".
@@ -43,3 +44,8 @@ Findings:
 - SparseMerged leaked state after a fill threw (next jet summed to 0.39, not 1); begin() now clears leftovers.
 - Hoisting `kFactorial / den` out of the leaf loop: N=3 M=100 -16%, N=4 M=50 -10%, N=5 M=50 +8%. Not adopted.
 - New tests checked by 7 mutations (each fix reverted or broken, plus over-broad axis check); each failed >= 1 test.
+
+## 2026-11-10 Strategy factorisation and update_extra
+- Decided with user: `Strategy<Loop, Precompute>` plus the four old names as aliases; PairBins with an unbinned
+  output is a compile error (default strategy now `DefaultFor<Output>`); `update_extra` without a matching
+  `Extra::update` is a compile error (static_assert), checked by `test/compile_fail` ctest cases.

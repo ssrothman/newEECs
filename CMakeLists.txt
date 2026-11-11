@@ -55,6 +55,21 @@ if(EEC_BUILD_TESTS)
   target_link_libraries(testEECs PRIVATE EECs)
   target_compile_options(testEECs PRIVATE -Wall -Wextra -Werror=missing-braces)
   add_test(NAME testEECs COMMAND testEECs)
+
+  # Each case must fail to compile with the named static_assert message.
+  set(EEC_CF_FLAGS -std=c++20 -fsyntax-only -I${CMAKE_BINARY_DIR}/include
+      -isystem ${FASTJET_INCLUDE_DIR} -isystem ${BOOST_HISTOGRAM_INCLUDE})
+  foreach(cf IN ITEMS
+      "pairbins_unbinned|precompute::PairBins requires a binned output"
+      "update_extra_missing|Extra has no update\\(\\) accepting these arguments"
+      "update_extra_badargs|Extra has no update\\(\\) accepting these arguments")
+    string(REPLACE "|" ";" cf "${cf}")
+    list(GET cf 0 name)
+    list(GET cf 1 msg)
+    add_test(NAME compile_fail_${name}
+             COMMAND ${CMAKE_CXX_COMPILER} ${EEC_CF_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/test/compile_fail/${name}.cc)
+    set_tests_properties(compile_fail_${name} PROPERTIES PASS_REGULAR_EXPRESSION "${msg}")
+  endforeach()
 endif()
 
 if(EEC_BUILD_BENCHMARKS)

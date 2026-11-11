@@ -9,6 +9,7 @@
 #include <limits>
 #include <numeric>
 #include <stdexcept>
+#include <type_traits>
 
 using namespace eec;
 using fastjet::PseudoJet;
@@ -104,12 +105,20 @@ namespace {
     }
   }
 
+  template <int N, class W, class Nrm, class A, class Out, class Loop>
+  void compareLoop(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
+    using strategy::Strategy;
+    namespace pre = strategy::precompute;
+    compareOne<N, W, Nrm, A, Out, Strategy<Loop, pre::None>>(ps, n, ang, b);
+    compareOne<N, W, Nrm, A, Out, Strategy<Loop, pre::PairAngles>>(ps, n, ang, b);
+    if constexpr (Out::binned)
+      compareOne<N, W, Nrm, A, Out, Strategy<Loop, pre::PairBins>>(ps, n, ang, b);
+  }
+
   template <int N, class W, class Nrm, class A, class Out>
   void compareStrategies(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
-    compareOne<N, W, Nrm, A, Out, strategy::Naive>(ps, n, ang, b);
-    compareOne<N, W, Nrm, A, Out, strategy::Multiset>(ps, n, ang, b);
-    compareOne<N, W, Nrm, A, Out, strategy::PairAngles>(ps, n, ang, b);
-    compareOne<N, W, Nrm, A, Out, strategy::PairBins>(ps, n, ang, b);
+    compareLoop<N, W, Nrm, A, Out, strategy::loop::Ordered>(ps, n, ang, b);
+    compareLoop<N, W, Nrm, A, Out, strategy::loop::Multiset>(ps, n, ang, b);
   }
 
   template <int N, class W, class Nrm, class A>
@@ -138,6 +147,17 @@ namespace {
   };
 
   using EnergyDR2 = ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>;
+
+  // Constant extra coordinate, reconfigurable through update().
+  struct ConstExtra {
+    static constexpr std::size_t K = 1;
+    double value = 0;
+    void update(double v) { value = v; }
+    template <std::size_t N>
+    std::array<double, 1> operator()(const JetData&, const std::array<std::uint32_t, N>&) const {
+      return {{value}};
+    }
+  };
 
   // Throws on its throwAt-th call (0 = never).
   struct ThrowingExtra {
@@ -327,6 +347,9 @@ TEST_CASE("PairBins rejects a decreasing axis 0", "[penc][strategy]") {
                     std::invalid_argument);
     CHECK_THROWS_AS((ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged>(3, 1.0, b)),
                     std::invalid_argument);
+    CHECK_THROWS_AS((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, NoExtra,
+                                  strategy::Strategy<strategy::loop::Ordered, strategy::precompute::PairBins>>(1.0, b)),
+                    std::invalid_argument);
     // Strategies that bin each tuple's theta_max directly handle a decreasing axis correctly.
     compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::PairAngles>(ps, 1.0, refDeltaR, b);
     compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::Multiset>(ps, 1.0, refDeltaR, b);
@@ -344,4 +367,38 @@ TEST_CASE("pENC calculator is reusable after a policy throws mid-jet", "[penc][o
   CHECK_THROWS_AS(reused(ps), std::runtime_error);
   Calc fresh(1.0, b);
   requireClose(toDense(reused(ps), b), toDense(fresh(ps), b));
+}
+
+TEST_CASE("strategy aliases and output-dependent default", "[penc][strategy]") {
+  using namespace strategy;
+  STATIC_REQUIRE(std::is_same_v<Naive, Strategy<loop::Ordered, precompute::None>>);
+  STATIC_REQUIRE(std::is_same_v<Multiset, Strategy<loop::Multiset, precompute::None>>);
+  STATIC_REQUIRE(std::is_same_v<PairAngles, Strategy<loop::Multiset, precompute::PairAngles>>);
+  STATIC_REQUIRE(std::is_same_v<PairBins, Strategy<loop::Multiset, precompute::PairBins>>);
+  STATIC_REQUIRE(std::is_same_v<DefaultFor<output::Dense>, PairBins>);
+  STATIC_REQUIRE(std::is_same_v<DefaultFor<output::SparseUnmerged>, PairBins>);
+  STATIC_REQUIRE(std::is_same_v<DefaultFor<output::Unbinned>, PairAngles>);
+}
+
+TEST_CASE("update_extra reconfigures Extra between jets", "[penc][extra]") {
+  const auto ps = eectest::randomJet(8, 4);
+  Binning b({RegularAxis(12, 0.0, 1.2), RegularAxis(4, 0.0, 1.0)});
+  auto extraBinWeight = [&](const DenseResult& r, double x) {
+    const auto want = b.binIndex(1, x);
+    double s = 0;
+    for (std::uint32_t lin = 0; lin < r.values.size(); ++lin)
+      if (b.unravel(lin)[1] == want)
+        s += r.values[lin];
+    return s;
+  };
+  ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, ConstExtra> calc(1.0, b, ConstExtra{0.1});
+  CHECK(extraBinWeight(calc(ps), 0.1) == Approx(1.0));
+  calc.update_extra(0.8);
+  const auto r = calc(ps);
+  CHECK(extraBinWeight(r, 0.8) == Approx(1.0));
+  CHECK(extraBinWeight(r, 0.1) == 0);
+
+  ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, ConstExtra> rt(4, 1.0, b);
+  rt.update_extra(0.6);
+  CHECK(extraBinWeight(rt(ps), 0.6) == Approx(1.0));
 }
