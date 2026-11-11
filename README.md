@@ -42,6 +42,7 @@ Calculators keep per-jet scratch space: use one instance per thread.
   i1 <= ... <= iN with multinomial symmetry factor N!/prod(m_k!).
 - Unmerged outputs (`SparseUnmerged`, `Unbinned`) hold one entry per multiset with `weight`
   (product of (E_p/E_jet)^n) and `symfactor` separately; `Dense` and `SparseMerged*` hold the product.
+  Under `strategy::Naive` they instead hold one entry per ordered tuple, each with `symfactor` 1.
 - Bin indices include flow bins (0 = underflow); the linear index has axis 0 fastest.
   `Binning::toHistogram` converts dense values into a `boost::histogram`.
 - `renormalization(meta, newEjet)` = (E_jet/newEjet)^(n N) rescales weights to another E_jet.
@@ -49,13 +50,17 @@ Calculators keep per-jet scratch space: use one instance per thread.
 - Merged sparse outputs keep a bin that was filled even if its weights cancel to zero.
 
 ## Extending
+See `docs/guide.md` for full documentation of policies, outputs, strategies and how to extend them.
+
 All configuration is compile-time policy structs:
 - particle weight E_p: `struct { static double value(const fastjet::PseudoJet&); }`
-- jet norm E_jet: `struct { static double value(const std::vector<PseudoJet>&, double external); }`
+- jet norm E_jet: `struct { static double value(const std::vector<PseudoJet>&, double external); }`, optionally with
+  `static constexpr bool usesExternalNorm`. If it is `false`, passing an `externalNorm` warns once per calculator
+  (`edm::LogWarning` under scram, `std::cerr` otherwise); without it the norm is assumed to use the value.
 - pair angle: `struct { static double pair(const JetData&, size_t i, size_t j); }` (>= 0, 0 on the diagonal)
 - extra pENC binning coordinates: `struct { static constexpr size_t K; template <size_t N> std::array<double, K> operator()(const JetData&, const std::array<uint32_t, N>&) const; }`,
   permutation-symmetric; the binning then needs 1 + K axes (axis 0 is theta_max).
 - E1C frame: class with `static constexpr size_t D` and `std::array<double, D> operator()(const PseudoJet&) const`.
 
 Strategies (`strategy::Naive`, `Multiset`, `PairAngles`, `PairBins`) are compared in `JOURNAL.md`.
-`PairBins` requires the axis-0 bin index to be non-decreasing in theta, which holds for all `Axis` types.
+`PairBins` requires an increasing axis 0; the constructor throws `std::invalid_argument` for a decreasing one.

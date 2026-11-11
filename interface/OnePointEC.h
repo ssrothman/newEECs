@@ -20,7 +20,7 @@ namespace eec {
   namespace frame {
 
     // Boosts particles into the rest frame of `rest`, then returns (theta, phi) with respect to
-    // axes z and x given in that rest frame. x is orthogonalised against z; phi in (-pi, pi].
+    // axes z and x given in that rest frame. x is orthogonalised against z; phi in [-pi, pi].
     class BoostRotate {
     public:
       static constexpr std::size_t D = 2;

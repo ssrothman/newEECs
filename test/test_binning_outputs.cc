@@ -99,6 +99,26 @@ TEST_CASE("SparseMerged scratch is reset between jets", "[outputs]") {
   CHECK(r.entries[0].weight == 0.5);
 }
 
+TEST_CASE("SparseMerged recovers from a jet that never reached finish()", "[outputs]") {
+  Binning b({RegularAxis(4, 0.0, 1.0)});
+  output::SparseMerged::Accumulator<1> acc;
+  acc.begin(b, 0);
+  acc.fill(2, 1.0, 1);
+  acc.fill(3, 7.0, 1);  // abandoned without finish(), as when a fill throws
+  acc.begin(b, 0);
+  acc.fill(2, 0.5, 1);
+  const auto r = acc.finish({});
+  REQUIRE(r.entries.size() == 1);
+  CHECK(r.entries[0].bin == 2);
+  CHECK(r.entries[0].weight == 0.5);
+  acc.begin(b, 0);
+  acc.fill(3, 0.25, 1);
+  const auto r2 = acc.finish({});
+  REQUIRE(r2.entries.size() == 1);
+  CHECK(r2.entries[0].bin == 3);
+  CHECK(r2.entries[0].weight == 0.25);
+}
+
 TEST_CASE("renormalization", "[outputs]") {
   const JetMeta m{50.0, 2.0, 3};
   CHECK(renormalization(m, 100.0) == Approx(std::pow(0.5, 6)));

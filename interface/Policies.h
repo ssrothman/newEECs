@@ -33,9 +33,11 @@ namespace eec {
     };
   }  // namespace weight
 
-  // Jet normalisation E_Jet: struct with `static double value(particles, externalNorm)`.
+  // Jet normalisation E_Jet: struct with `static double value(particles, externalNorm)` and optionally
+  // `static constexpr bool usesExternalNorm`; policies without it are assumed to use externalNorm.
   namespace norm {
     struct SumEnergy {
+      static constexpr bool usesExternalNorm = false;
       static double value(const std::vector<fastjet::PseudoJet>& ps, double) {
         double s = 0;
         for (const auto& p : ps)
@@ -44,6 +46,7 @@ namespace eec {
       }
     };
     struct SumPt {
+      static constexpr bool usesExternalNorm = false;
       static double value(const std::vector<fastjet::PseudoJet>& ps, double) {
         double s = 0;
         for (const auto& p : ps)
@@ -52,6 +55,7 @@ namespace eec {
       }
     };
     struct External {
+      static constexpr bool usesExternalNorm = true;
       static double value(const std::vector<fastjet::PseudoJet>&, double ext) {
         if (!std::isfinite(ext) || ext == 0)
           throw std::invalid_argument("eec: norm::External requires a finite, non-zero external normalisation");
@@ -59,9 +63,20 @@ namespace eec {
       }
     };
     struct Unity {
+      static constexpr bool usesExternalNorm = false;
       static double value(const std::vector<fastjet::PseudoJet>&, double) { return 1.0; }
     };
   }  // namespace norm
+
+  namespace detail {
+    template <class Norm>
+    constexpr bool ignoresExternalNorm() {
+      if constexpr (requires { Norm::usesExternalNorm; })
+        return !Norm::usesExternalNorm;
+      else
+        return false;
+    }
+  }  // namespace detail
 
 }  // namespace eec
 

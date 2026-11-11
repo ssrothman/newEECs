@@ -8,6 +8,7 @@
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 
 using namespace eec;
 using fastjet::PseudoJet;
@@ -137,6 +138,19 @@ namespace {
   };
 
   using EnergyDR2 = ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>;
+
+  // Throws on its throwAt-th call (0 = never).
+  struct ThrowingExtra {
+    static constexpr std::size_t K = 1;
+    int throwAt = 0;
+    mutable int calls = 0;
+    template <std::size_t N>
+    std::array<double, 1> operator()(const JetData&, const std::array<std::uint32_t, N>&) const {
+      if (++calls == throwAt)
+        throw std::runtime_error("ThrowingExtra");
+      return {{0.5}};
+    }
+  };
 
 }  // namespace
 
@@ -303,4 +317,31 @@ TEST_CASE("runtime-N dispatcher matches compile-time N", "[penc][runtime]") {
   CHECK(u4(ps).entries.size() == detail::multichoose(ps.size(), 4));
   CHECK_THROWS_AS((ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>(7, 1.0, b)),
                   std::invalid_argument);
+}
+
+TEST_CASE("PairBins rejects a decreasing axis 0", "[penc][strategy]") {
+  const auto ps = eectest::randomJet(9, 7);
+  for (const Axis& ax : {Axis(RegularAxis(10, 1.2, 0.0)), Axis(LogAxis(10, 1.5, 1e-2))}) {
+    const Binning b({ax});
+    CHECK_THROWS_AS((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>(1.0, b)),
+                    std::invalid_argument);
+    CHECK_THROWS_AS((ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged>(3, 1.0, b)),
+                    std::invalid_argument);
+    // Strategies that bin each tuple's theta_max directly handle a decreasing axis correctly.
+    compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::PairAngles>(ps, 1.0, refDeltaR, b);
+    compareOne<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, strategy::Multiset>(ps, 1.0, refDeltaR, b);
+  }
+  // Only axis 0 is constrained.
+  CHECK_NOTHROW((ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense, MinPairDR>(
+      1.0, Binning({RegularAxis(12, 0.0, 1.2), RegularAxis(6, 0.6, 0.0)}))));
+}
+
+TEST_CASE("pENC calculator is reusable after a policy throws mid-jet", "[penc][outputs]") {
+  const auto ps = eectest::randomJet(10, 7);
+  Binning b({RegularAxis(12, 0.0, 1.2), RegularAxis(4, 0.0, 1.0)});
+  using Calc = ProjectedENC<3, weight::Energy, norm::SumEnergy, angle::DeltaR, output::SparseMerged, ThrowingExtra>;
+  Calc reused(1.0, b, ThrowingExtra{5});
+  CHECK_THROWS_AS(reused(ps), std::runtime_error);
+  Calc fresh(1.0, b);
+  requireClose(toDense(reused(ps), b), toDense(fresh(ps), b));
 }

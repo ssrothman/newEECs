@@ -26,7 +26,7 @@ namespace eec {
     // Multiset loop with a precomputed M x M pair-angle matrix.
     struct PairAngles {};
     // Multiset loop with a precomputed M x M matrix of axis-0 bins, using
-    // bin(max theta) == max bin(theta) for monotone axes. Falls back to PairAngles if unbinned.
+    // bin(max theta) == max bin(theta) for increasing axes. Falls back to PairAngles if unbinned.
     struct PairBins {};
   }  // namespace strategy
 
@@ -75,6 +75,11 @@ namespace eec {
         : n_(n), binning_(std::move(binning)), extra_(std::move(extra)) {
       if (binning_.rank() != D)
         throw std::invalid_argument("eec::ProjectedENC: binning rank must be 1 + Extra::K");
+      if constexpr (kPairBins) {
+        const auto& ax = binning_.axis(0);
+        if (!(ax.value(0) < ax.value(ax.size())))
+          throw std::invalid_argument("eec::ProjectedENC: strategy::PairBins requires an increasing axis 0");
+      }
     }
 
     explicit ProjectedENC(double n, Extra extra = Extra{})

@@ -1,6 +1,9 @@
 #ifndef SRothman_EECs_JetData_h
 #define SRothman_EECs_JetData_h
 
+#include "SRothman/EECs/interface/Policies.h"
+#include "SRothman/EECs/interface/Warn.h"
+
 #include <fastjet/PseudoJet.hh>
 
 #include <cmath>
@@ -13,10 +16,11 @@ namespace eec {
   struct JetData {
     double E_jet = 0;
     double n = 1;
-    const std::vector<fastjet::PseudoJet>* particles = nullptr;
     std::vector<double> w;  // (E_p / E_jet)^n
     std::vector<double> ux, uy, uz;
     std::vector<double> eta, phi;  // phi in [0, 2pi)
+    // Persists across jets so the ignored-externalNorm warning fires once per calculator.
+    bool warnedIgnoredExternalNorm = false;
 
     std::size_t size() const { return w.size(); }
   };
@@ -24,7 +28,12 @@ namespace eec {
   template <class Weight, class Norm>
   void fillJetData(JetData& jd, const std::vector<fastjet::PseudoJet>& ps, double n, double externalNorm) {
     const std::size_t M = ps.size();
-    jd.particles = &ps;
+    if constexpr (detail::ignoresExternalNorm<Norm>()) {
+      if (!std::isnan(externalNorm) && !jd.warnedIgnoredExternalNorm) {
+        jd.warnedIgnoredExternalNorm = true;
+        detail::warn("externalNorm was passed to a calculator whose Norm policy ignores it");
+      }
+    }
     jd.n = n;
     jd.E_jet = Norm::value(ps, externalNorm);
     jd.w.resize(M);

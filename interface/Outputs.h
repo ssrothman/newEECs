@@ -92,6 +92,12 @@ namespace eec {
           if (scratch_.size() != b.totalBins()) {
             scratch_.assign(b.totalBins(), 0.0);
             seen_.assign(b.totalBins(), 0);
+          } else {
+            // touched_ is non-empty only if the previous jet threw before finish().
+            for (auto t : touched_) {
+              scratch_[t] = 0;
+              seen_[t] = 0;
+            }
           }
           touched_.clear();
         }
