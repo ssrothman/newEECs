@@ -6,6 +6,7 @@
 - [2026-11-10 Review fixes](#2026-11-10-review-fixes)
 - [2026-11-10 Strategy factorisation and update_extra](#2026-11-10-strategy-factorisation-and-update_extra)
 - [2026-11-11 Review round 2](#2026-11-11-review-round-2)
+- [2026-11-11 Review round 3: de-duplication](#2026-11-11-review-round-3-de-duplication)
 
 ## 2026-11-10 Initial implementation
 - Plan: `simulation/stepA.md` §A.1; decisions agreed with user are in README "Conventions".
@@ -66,3 +67,19 @@ Findings:
 - Concepts (`interface/Concepts.h`) constrain all calculators; checked by `test/test_concepts.cc` and three
   compile_fail cases. Mutations: dropping each of 4 constraints/clauses fails >= 1 test. New zero-|p| and count tests:
   dropping the throw and a no-replacement loop each fail; a wrong `multichoose` (reserve only) passes, as intended.
+
+## 2026-11-11 Review round 3: de-duplication
+- Decided with user: keep every strategy and output (an Extra may need `loop::Ordered`); no templated Norm/Weight policies;
+  `Dense` keeps its once-per-jet allocation; E1C no longer throws on |p| = 0 (geometry is built only for pENC).
+- `detail::CalculatorBase` now holds n (must be finite), binning, accumulator and the ignored-externalNorm flag for both
+  calculators. `fillJetData` split into `fillWeights` + `fillGeometry`. N is `std::size_t` everywhere (std::array's N forces it).
+  Template parameter `Strategy` renamed `Strat`.
+- `BoostRotate` applies fastjet's unboost formula directly instead of copying the PseudoJet; with the geometry no longer
+  built for E1C, E1C M=50 went 4.75 -> 2.64 us, M=150 14.2 -> 7.8 us (min of 3, core-pinned).
+- pENC leaf, interleaved min of 3 new/old: 0.95-1.07 everywhere except Dense PairAngles N=3 in `eec_bench` (1.57). A
+  binary with only that case and PairBins measured new/old ~1.0 (1.95-2.05 ms both), so this is the inlining sensitivity
+  noted in round 2, not extra work. Routing binned PairAngles through `linearIndex(coord)` was 1.7x in `eec_bench`; not adopted.
+- Compile-fail regexes accept GCC and clang 17 wording; verified both, and a compiling mutant matches neither.
+- 13 mutations (n check, unboost formula, static_cast charge, bin0 stride, E1C geometry, fillWeights touching geometry,
+  NaN externalNorm warning, shared warn flag, extras dropped in both leaf paths, test helper skipping an output or the
+  callback, no symfactor): each fails >= 1 test.

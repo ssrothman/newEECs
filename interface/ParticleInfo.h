@@ -20,9 +20,10 @@ namespace eec {
   };
 
   inline int particleCharge(const fastjet::PseudoJet& p) {
-    if (!p.has_user_info<EECParticleInfo>())
+    const auto* info = dynamic_cast<const EECParticleInfo*>(p.user_info_ptr());
+    if (!info)
       throw std::invalid_argument("eec: particle has no EECParticleInfo user_info, charge unavailable");
-    return p.user_info<EECParticleInfo>().charge();
+    return info->charge();
   }
 
 }  // namespace eec

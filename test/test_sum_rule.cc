@@ -1,5 +1,6 @@
 #include "SRothman/EECs/interface/OnePointEC.h"
 #include "SRothman/EECs/interface/ProjectedENC.h"
+#include "TestHelpers.h"
 #include "TestJets.h"
 
 #include <catch.hpp>
@@ -28,76 +29,27 @@ namespace {
     }
   };
 
-  double total(const DenseResult& r) {
-    double s = 0;
-    for (double v : r.values)
-      s += v;
-    return s;
-  }
-  double total(const SparseResult& r) {
-    double s = 0;
-    for (const auto& e : r.entries)
-      s += e.weight;
-    return s;
-  }
-  double total(const SparseUnmergedResult& r) {
-    double s = 0;
-    for (const auto& e : r.entries)
-      s += e.weight * e.symfactor;
-    return s;
-  }
-  template <std::size_t D>
-  double total(const UnbinnedResult<D>& r) {
-    double s = 0;
-    for (const auto& e : r.entries)
-      s += e.weight * e.symfactor;
-    return s;
+  template <class R>
+  double total(const R& r, const Binning& b) {
+    return eectest::sum(eectest::toDense(r, b));
   }
 
-  template <int N, class W, class Nrm, class Out, class Strat>
-  void checkOne(const std::vector<PseudoJet>& ps, const Binning& b) {
-    using Calc = ProjectedENC<N, W, Nrm, angle::DeltaR, Out, NoExtra, Strat>;
-    double s;
-    if constexpr (Out::binned)
-      s = total(Calc(1.0, b)(ps));
-    else
-      s = total(Calc(1.0)(ps));
-    INFO("N=" << N << " sum-1=" << s - 1);
-    CHECK(std::abs(s - 1.0) < kTol);
-  }
-
-  template <int N, class W, class Nrm, class Out, class Loop>
-  void checkLoop(const std::vector<PseudoJet>& ps, const Binning& b) {
-    using strategy::Strategy;
-    namespace pre = strategy::precompute;
-    checkOne<N, W, Nrm, Out, Strategy<Loop, pre::None>>(ps, b);
-    checkOne<N, W, Nrm, Out, Strategy<Loop, pre::PairAngles>>(ps, b);
-    if constexpr (Out::binned)
-      checkOne<N, W, Nrm, Out, Strategy<Loop, pre::PairBins>>(ps, b);
-  }
-
-  template <int N, class W, class Nrm, class Out>
-  void checkStrategies(const std::vector<PseudoJet>& ps, const Binning& b) {
-    checkLoop<N, W, Nrm, Out, strategy::loop::Ordered>(ps, b);
-    checkLoop<N, W, Nrm, Out, strategy::loop::Multiset>(ps, b);
-  }
-
-  template <int N, class W, class Nrm>
-  void checkOutputs(const std::vector<PseudoJet>& ps, const Binning& b) {
-    checkStrategies<N, W, Nrm, output::Dense>(ps, b);
-    checkStrategies<N, W, Nrm, output::SparseMerged>(ps, b);
-    checkStrategies<N, W, Nrm, output::SparseMergedSort>(ps, b);
-    checkStrategies<N, W, Nrm, output::SparseUnmerged>(ps, b);
-    checkStrategies<N, W, Nrm, output::Unbinned>(ps, b);
+  template <std::size_t N, class W, class Nrm>
+  void checkAllConfigs(const std::vector<PseudoJet>& ps, const Binning& b) {
+    eectest::forEachConfig<N, W, Nrm, angle::DeltaR>(ps, 1.0, b, [](const std::vector<double>& v) {
+      const double s = eectest::sum(v);
+      INFO("sum-1=" << s - 1);
+      CHECK(std::abs(s - 1.0) < kTol);
+    });
   }
 
   template <class W, class Nrm>
   void checkAllN(const std::vector<PseudoJet>& ps, const Binning& b) {
-    checkOutputs<2, W, Nrm>(ps, b);
-    checkOutputs<3, W, Nrm>(ps, b);
-    checkOutputs<4, W, Nrm>(ps, b);
-    checkOutputs<5, W, Nrm>(ps, b);
-    checkOutputs<6, W, Nrm>(ps, b);
+    checkAllConfigs<2, W, Nrm>(ps, b);
+    checkAllConfigs<3, W, Nrm>(ps, b);
+    checkAllConfigs<4, W, Nrm>(ps, b);
+    checkAllConfigs<5, W, Nrm>(ps, b);
+    checkAllConfigs<6, W, Nrm>(ps, b);
   }
 
 }  // namespace
@@ -123,8 +75,8 @@ TEST_CASE("pENC sum rule fails when n != 1 or E_jet is not the sum", "[penc][sum
   Binning b({LogAxis(8, 0.05, 0.4)});
   using P2 = ProjectedENC<2, weight::Energy, norm::SumEnergy, angle::DeltaR, output::Dense>;
   using P2pt = ProjectedENC<2, weight::Energy, norm::SumPt, angle::DeltaR, output::Dense>;
-  CHECK(std::abs(total(P2(2.0, b)(ps)) - 1.0) > 1e-3);
-  CHECK(std::abs(total(P2pt(1.0, b)(ps)) - 1.0) > 1e-3);
+  CHECK(std::abs(total(P2(2.0, b)(ps), b) - 1.0) > 1e-3);
+  CHECK(std::abs(total(P2pt(1.0, b)(ps), b) - 1.0) > 1e-3);
 }
 
 TEST_CASE("E1C weights sum to 1 for n=1 and E_jet = sum E_p", "[e1c][sumrule]") {
@@ -132,11 +84,12 @@ TEST_CASE("E1C weights sum to 1 for n=1 and E_jet = sum E_p", "[e1c][sumrule]") 
   const PseudoJet rest(0, 0, 50, std::sqrt(50 * 50 + 91.0 * 91.0));
   frame::BoostRotate f(rest, {{0, 0, 1}}, {{1, 0, 0}});
   Binning b({RegularAxis(6, 0.2, 1.0), RegularAxis(5, -1.0, 1.0)});
-  CHECK(std::abs(total(OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::Dense>(1.0, b)(ps, f)) -
+  CHECK(std::abs(total(OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::Dense>(1.0, b)(ps, f), b) -
                  1.0) < kTol);
-  CHECK(std::abs(total(OnePointEC<weight::Pt, norm::SumPt, frame::BoostRotate, output::SparseMerged>(1.0, b)(ps, f)) -
+  CHECK(std::abs(total(OnePointEC<weight::Pt, norm::SumPt, frame::BoostRotate, output::SparseMerged>(1.0, b)(ps, f), b) -
                  1.0) < kTol);
   CHECK(std::abs(total(OnePointEC<weight::ChargePt, SumOf<weight::ChargePt>, frame::BoostRotate, output::Unbinned>(
-                           1.0)(ps, f)) -
+                           1.0)(ps, f),
+                       b) -
                  1.0) < kTol);
 }

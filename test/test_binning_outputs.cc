@@ -41,6 +41,7 @@ TEST_CASE("Binning linear index matches boost::histogram", "[binning]") {
     const auto idx = b.unravel(b.linearIndex(x));
     CHECK(idx[0] == b.binIndex(0, x[0]));
     CHECK(idx[1] == b.binIndex(1, x[1]));
+    CHECK(b.linearIndex(b.binIndex(0, x[0]), std::array<double, 1>{{x[1]}}) == b.linearIndex(x));
   }
   const auto h = b.toHistogram(dense);
   for (auto&& x : bh::indexed(ref, bh::coverage::all))

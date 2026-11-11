@@ -40,11 +40,12 @@ E1C entries always have symmetry factor 1.
 
 | Class | Template parameters | Constructors | Call |
 |---|---|---|---|
-| `ProjectedENC` | `<int N, Weight, Norm, Angle, Output, Extra = NoExtra, Strategy = strategy::DefaultFor<Output>>`, with 1 ≤ N ≤ 12 | binned output: `(n, Binning, Extra = {})`; unbinned: `(n, Extra = {})` | `operator()(particles, externalNorm = kNoExternalNorm)` |
+| `ProjectedENC` | `<std::size_t N, Weight, Norm, Angle, Output, Extra = NoExtra, Strat = strategy::DefaultFor<Output>>`, with 1 ≤ N ≤ 12 | binned output: `(n, Binning, Extra = {})`; unbinned: `(n, Extra = {})` | `operator()(particles, externalNorm = kNoExternalNorm)` |
 | `ProjectedENCRuntimeN` | same, without `N` | `(N, n, Binning, Extra = {})` / `(N, n, Extra = {})`, with 2 ≤ N ≤ 6 | same as above |
 | `OnePointEC` | `<Weight, Norm, Frame, Output>` | `(n, Binning)` / `(n)` | `operator()(particles, frame, externalNorm = kNoExternalNorm)` |
 
 - `particles` is a `std::vector<fastjet::PseudoJet>`.
+- Every constructor requires a finite `n`.
 - The binned constructor checks the binning rank: it must be 1 + `Extra::K` for pENC and `Frame::D` for E1C.
 - The 12 upper bound on N exists because symmetry factors are computed in 32-bit integers.
 - `ProjectedENCRuntimeN` holds a `std::variant` of `ProjectedENC<2..6>` and dispatches with `std::visit`. The result type does not depend on N.
@@ -54,13 +55,14 @@ E1C entries always have symmetry factor 1.
 
 ## 3. Per-jet data flow
 
-1. `fillJetData<Weight, Norm>` fills a `JetData`, a structure of arrays:
-   - `E_jet` = `Norm::value(particles, externalNorm)`
-   - `w[i]` = (`Weight::value(pᵢ)` / E_jet)ⁿ. `pow` is skipped when n = 1.
-   - `ux, uy, uz`: the unit three-momentum. A particle with zero three-momentum throws `std::invalid_argument`, for E1C too.
-   - `eta`: pseudorapidity.
-   - `phi`: azimuth in [0, 2π).
-   - `warnedIgnoredExternalNorm` is per-calculator state, not per-jet: it is never reset, so the ignored-`externalNorm` warning ([section 4](#norm-e_jet--eecnorm)) fires once per calculator.
+1. The calculator fills a `JetData`, a structure of arrays:
+   - `fillWeights<Weight, Norm>` (pENC and E1C):
+     - `E_jet` = `Norm::value(particles, externalNorm)`
+     - `w[i]` = (`Weight::value(pᵢ)` / E_jet)ⁿ. `pow` is skipped when n = 1.
+   - `fillGeometry` (pENC only; E1C leaves these empty):
+     - `ux, uy, uz`: the unit three-momentum. A particle with zero three-momentum throws `std::invalid_argument`.
+     - `eta`: pseudorapidity.
+     - `phi`: azimuth in [0, 2π).
 2. pENC only: the strategy may precompute an M×M matrix. It then walks the tuples, carrying the running weight
    product and θ_max, and calls `Output::Accumulator::fill` once per tuple or multiset.
    E1C: one fill per particle, at `frame(pᵢ)`.
@@ -197,14 +199,14 @@ The default, `DefaultFor<Output>`, is `PairBins` for binned outputs and `PairAng
 |---|---|---|
 | `Binning` | `invalid_argument` | no axes; more than 2³²−1 bins |
 | `Binning::toHistogram` | `invalid_argument` | size of the values vector ≠ `totalBins()` |
-| `ProjectedENC` constructor | `invalid_argument` | rank ≠ 1 + K; `precompute::PairBins` with a decreasing axis 0 |
-| `ProjectedENCRuntimeN` constructor | `invalid_argument` | N ∉ [2, 6] |
-| `OnePointEC` constructor | `invalid_argument` | rank ≠ `Frame::D` |
+| `ProjectedENC` constructor | `invalid_argument` | n not finite; rank ≠ 1 + K; `precompute::PairBins` with a decreasing axis 0 |
+| `ProjectedENCRuntimeN` constructor | `invalid_argument` | N ∉ [2, 6]; as `ProjectedENC` |
+| `OnePointEC` constructor | `invalid_argument` | n not finite; rank ≠ `Frame::D` |
 | `frame::BoostRotate` | `invalid_argument` | `rest` not timelike; degenerate axis |
 | `norm::External` | `invalid_argument` | `externalNorm` not finite, or zero |
 | charge weights | `invalid_argument` | no `EECParticleInfo` |
-| `fillJetData` | `domain_error` | negative E_p with non-integer n |
-| `fillJetData` | `invalid_argument` | a particle with zero three-momentum |
+| `fillWeights` | `domain_error` | negative E_p with non-integer n |
+| `fillGeometry` (pENC only) | `invalid_argument` | a particle with zero three-momentum |
 
 ## 9. Extending the library
 Each new policy is a plain type passed as a template argument. Nothing needs to be registered. The examples below
@@ -244,7 +246,7 @@ struct DeltaEta {
 Requirements:
 - The angle must be ≥ 0, with `pair(d, i, i) == 0`. θ_max starts from 0, and the matrix diagonals are set to 0.
 - It must be symmetric, `pair(i, j) == pair(j, i)`. The matrices fill only i < j, while precompute `None` calls it with i ≤ j (`Multiset` loop) or in any order (`Ordered` loop), including i == j.
-- It can use only `JetData` fields. If you need another per-particle quantity (for example rapidity), add a field to `JetData` and fill it in `fillJetData`.
+- It can use only `JetData` fields. If you need another per-particle quantity (for example rapidity), add a field to `JetData` and fill it in `fillGeometry`.
 
 ### 9.4 Extra coordinates
 ```cpp
@@ -340,7 +342,7 @@ struct TotalWeight {
 ```
 
 ### 9.7 Testing a new policy
-- **pENC:** add it to `compareAll` in `test/test_penc.cc`. That compares every output and strategy against an ordered-tuple oracle. The oracle needs a reference angle, or a reference Extra, computed independently from the `PseudoJet`s.
+- **pENC:** add it to `compareAll` in `test/test_penc.cc`. That compares every output and strategy (via `forEachConfig` in `test/TestHelpers.h`) against an ordered-tuple oracle. The oracle needs a reference angle, or a reference Extra, computed independently from the `PseudoJet`s.
 - **Any weight or norm:** for n = 1 and E_jet = Σ E_p, the sum rule in `test/test_sum_rule.cc` checks the bookkeeping.
 - **Interface:** `static_assert(eec::AnglePolicy<MyAngle>)` (or the matching concept) checks it against the interface.
 - **CMSSW:** new test files must also be listed in `test/BuildFile.xml`. CMake globs `test/*.cc`.

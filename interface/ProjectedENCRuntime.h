@@ -15,24 +15,24 @@ namespace eec {
             AnglePolicy Angle,
             class Output,
             class Extra = NoExtra,
-            class Strategy = strategy::DefaultFor<Output>>
+            class Strat = strategy::DefaultFor<Output>>
     requires ExtraPolicy<Extra, 2> && ExtraPolicy<Extra, 3> && ExtraPolicy<Extra, 4> && ExtraPolicy<Extra, 5> &&
              ExtraPolicy<Extra, 6> && OutputPolicy<Output, 1 + Extra::K>
   class ProjectedENCRuntimeN {
-    template <int N>
-    using Impl = ProjectedENC<N, Weight, Norm, Angle, Output, Extra, Strategy>;
+    template <std::size_t N>
+    using Impl = ProjectedENC<N, Weight, Norm, Angle, Output, Extra, Strat>;
     using Variant = std::variant<Impl<2>, Impl<3>, Impl<4>, Impl<5>, Impl<6>>;
 
   public:
     using Result = typename Impl<2>::Result;
 
-    ProjectedENCRuntimeN(int N, double n, Binning binning, Extra extra = Extra{})
+    ProjectedENCRuntimeN(std::size_t N, double n, Binning binning, Extra extra = Extra{})
       requires(Output::binned)
-        : impl_(make(N, [&]<int NN>() { return Impl<NN>(n, binning, extra); })) {}
+        : impl_(make(N, [&]<std::size_t NN>() { return Impl<NN>(n, binning, extra); })) {}
 
-    ProjectedENCRuntimeN(int N, double n, Extra extra = Extra{})
+    ProjectedENCRuntimeN(std::size_t N, double n, Extra extra = Extra{})
       requires(!Output::binned)
-        : impl_(make(N, [&]<int NN>() { return Impl<NN>(n, extra); })) {}
+        : impl_(make(N, [&]<std::size_t NN>() { return Impl<NN>(n, extra); })) {}
 
     Result operator()(const std::vector<fastjet::PseudoJet>& particles, double externalNorm = kNoExternalNorm) const {
       return std::visit([&](const auto& c) { return c(particles, externalNorm); }, impl_);
@@ -45,7 +45,7 @@ namespace eec {
 
   private:
     template <class F>
-    static Variant make(int N, F&& f) {
+    static Variant make(std::size_t N, F&& f) {
       switch (N) {
         case 2:
           return Variant(f.template operator()<2>());

@@ -34,7 +34,7 @@ namespace eec {
   };
 
   // K extra pENC coordinates for an N-tuple.
-  template <class X, int N>
+  template <class X, std::size_t N>
   concept ExtraPolicy = requires { std::integral_constant<std::size_t, X::K>{}; } &&
                         requires(const X& x, const JetData& d, const std::array<std::uint32_t, N>& idx) {
                           { x(d, idx) } -> std::convertible_to<std::array<double, X::K>>;

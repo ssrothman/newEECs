@@ -15,12 +15,12 @@ namespace eec {
   struct JetMeta {
     double E_jet = 0;
     double n = 1;
-    int N = 0;
+    std::size_t N = 0;
   };
 
   // Factor that converts weights normalised by meta.E_jet into weights normalised by newEjet.
   inline double renormalization(const JetMeta& meta, double newEjet) {
-    return std::pow(meta.E_jet / newEjet, meta.n * meta.N);
+    return std::pow(meta.E_jet / newEjet, meta.n * static_cast<double>(meta.N));
   }
 
   struct BinEntry {

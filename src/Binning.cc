@@ -1,5 +1,6 @@
 #include "SRothman/EECs/interface/Binning.h"
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 
@@ -33,12 +34,8 @@ namespace eec {
     if (dense.size() != total_)
       throw std::invalid_argument("eec::Binning::toHistogram: size mismatch");
     auto h = bh::make_histogram_with(bh::dense_storage<double>(), axes_);
-    for (auto&& x : bh::indexed(h, bh::coverage::all)) {
-      std::size_t lin = 0;
-      for (std::size_t k = 0; k < rank(); ++k)
-        lin += strides_[k] * static_cast<std::size_t>(x.index(k) + 1);
-      *x = dense[lin];
-    }
+    // Every axis has underflow, so boost's storage order (axis 0 fastest, underflow first) is our linear index.
+    std::copy(dense.begin(), dense.end(), h.begin());
     return h;
   }
 

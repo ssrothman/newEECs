@@ -41,17 +41,16 @@ TEST_CASE("ignoresExternalNorm trait", "[warning]") {
   STATIC_REQUIRE(!detail::ignoresExternalNorm<NormWithoutTrait>());
 }
 
-TEST_CASE("fillJetData flags an ignored externalNorm", "[jetdata][warning]") {
-  const auto ps = eectest::randomJet(4, 1);
-  JetData jd;
-  fillJetData<weight::Energy, norm::SumEnergy>(jd, ps, 1.0, kNoExternalNorm);
-  CHECK(!jd.warnedIgnoredExternalNorm);
-  fillJetData<weight::Energy, norm::External>(jd, ps, 1.0, 5.0);
-  CHECK(!jd.warnedIgnoredExternalNorm);
-  fillJetData<weight::Energy, NormWithoutTrait>(jd, ps, 1.0, 5.0);
-  CHECK(!jd.warnedIgnoredExternalNorm);
-  fillJetData<weight::Energy, norm::SumEnergy>(jd, ps, 1.0, 5.0);
-  CHECK(jd.warnedIgnoredExternalNorm);
+TEST_CASE("warnIfExternalNormIgnored sets its flag only for norms that ignore externalNorm", "[warning]") {
+  bool warned = false;
+  detail::warnIfExternalNormIgnored<norm::SumEnergy>(warned, kNoExternalNorm);
+  CHECK(!warned);
+  detail::warnIfExternalNormIgnored<norm::External>(warned, 5.0);
+  CHECK(!warned);
+  detail::warnIfExternalNormIgnored<NormWithoutTrait>(warned, 5.0);
+  CHECK(!warned);
+  detail::warnIfExternalNormIgnored<norm::SumEnergy>(warned, 5.0);
+  CHECK(warned);
 }
 
 #ifndef CMSSW_GIT_HASH

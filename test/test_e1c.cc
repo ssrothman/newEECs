@@ -4,7 +4,9 @@
 #include <catch.hpp>
 
 #include <cmath>
+#include <limits>
 #include <numbers>
+#include <random>
 
 using namespace eec;
 using fastjet::PseudoJet;
@@ -92,8 +94,64 @@ TEST_CASE("OnePointEC weights and outputs", "[e1c]") {
   CHECK(s.entries.size() == 3);
 }
 
-TEST_CASE("OnePointEC rejects a zero-momentum particle", "[e1c]") {
-  const frame::BoostRotate f(PseudoJet(0, 0, 0, 91.0), {{0, 0, 1}}, {{1, 0, 0}});
+TEST_CASE("OnePointEC accepts a zero-momentum particle", "[e1c]") {
+  // At rest in the lab, it moves along -z in the rest frame of a vector moving along +z.
+  const frame::BoostRotate f(PseudoJet(0, 0, 50, std::sqrt(50 * 50 + 91.0 * 91.0)), {{0, 0, 1}}, {{1, 0, 0}});
   OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::Unbinned> e1c(1.0);
-  CHECK_THROWS_AS(e1c({PseudoJet(1, 0, 0, 1), PseudoJet(0, 0, 0, 0.14)}, f), std::invalid_argument);
+  const auto r = e1c({PseudoJet(1, 0, 0, 1), PseudoJet(0, 0, 0, 0.14)}, f);
+  REQUIRE(r.entries.size() == 2);
+  CHECK(r.entries[1].coord[0] == Approx(pi));
+  CHECK(r.entries[1].weight == Approx(0.14 / 1.14));
+}
+
+TEST_CASE("BoostRotate matches fastjet unboost for general frames", "[e1c]") {
+  std::mt19937 rng(5);
+  std::uniform_real_distribution<double> u(-50, 50), um(1, 100);
+  auto unit = [](std::array<double, 3> a) {
+    const double m = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    return std::array<double, 3>{{a[0] / m, a[1] / m, a[2] / m}};
+  };
+  auto dot = [](const std::array<double, 3>& a, const std::array<double, 3>& b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  };
+  for (int trial = 0; trial < 20; ++trial) {
+    const double rx = u(rng), ry = u(rng), rz = u(rng), rm = um(rng);
+    const PseudoJet rest(rx, ry, rz, std::sqrt(rx * rx + ry * ry + rz * rz + rm * rm));
+    const std::array<double, 3> z{{u(rng), u(rng), u(rng)}}, x{{u(rng), u(rng), u(rng)}};
+    const frame::BoostRotate f(rest, z, x);
+
+    const auto zn = unit(z);
+    const double xz = dot(x, zn);
+    const auto xn = unit({{x[0] - xz * zn[0], x[1] - xz * zn[1], x[2] - xz * zn[2]}});
+    const std::array<double, 3> yn{
+        {zn[1] * xn[2] - zn[2] * xn[1], zn[2] * xn[0] - zn[0] * xn[2], zn[0] * xn[1] - zn[1] * xn[0]}};
+    for (int i = 0; i < 10; ++i) {
+      const double px = u(rng), py = u(rng), pz = u(rng), pm = 0.1 * um(rng);
+      const PseudoJet p(px, py, pz, std::sqrt(px * px + py * py + pz * pz + pm * pm));
+      PseudoJet q(p);
+      q.unboost(rest);
+      const std::array<double, 3> v{{q.px(), q.py(), q.pz()}};
+      const double vx = dot(v, xn), vy = dot(v, yn), vz = dot(v, zn);
+      const double theta = std::atan2(std::sqrt(vx * vx + vy * vy), vz), phi = std::atan2(vy, vx);
+      const auto c = f(p);
+      INFO("trial " << trial << " particle " << i);
+      CHECK(c[0] == Approx(theta).margin(1e-9));
+      // cos/sin so that phi = -pi and +pi compare equal.
+      CHECK(std::cos(c[1]) == Approx(std::cos(phi)).margin(1e-9));
+      CHECK(std::sin(c[1]) == Approx(std::sin(phi)).margin(1e-9));
+    }
+  }
+}
+
+TEST_CASE("OnePointEC rejects a non-finite n", "[e1c]") {
+  using Dense = OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::Dense>;
+  using Unb = OnePointEC<weight::Energy, norm::SumEnergy, frame::BoostRotate, output::Unbinned>;
+  const Binning b({RegularAxis(4, 0.0, pi), RegularAxis(4, -pi, pi)});
+  for (double bad : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                     -std::numeric_limits<double>::infinity()}) {
+    CHECK_THROWS_AS(Dense(bad, b), std::invalid_argument);
+    CHECK_THROWS_AS(Unb(bad), std::invalid_argument);
+  }
+  CHECK_NOTHROW(Dense(-2.0, b));
+  CHECK_NOTHROW(Unb(0.0));
 }

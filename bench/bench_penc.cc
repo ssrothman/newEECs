@@ -20,7 +20,7 @@ namespace {
 
   Binning thetaBinning() { return Binning({LogAxis(50, 1e-3, 1.0)}); }
 
-  template <int N, class Out, class Strat>
+  template <std::size_t N, class Out, class Strat>
   void BM_pENC(benchmark::State& state) {
     const auto ps = syntheticJet(static_cast<std::size_t>(state.range(0)), 1);
     using Calc = ProjectedENC<N, weight::Energy, norm::SumEnergy, angle::DeltaR, Out, NoExtra, Strat>;

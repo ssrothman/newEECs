@@ -43,6 +43,15 @@ namespace eec {
       return lin;
     }
 
+    // Linear index from an already computed axis-0 bin and the values on axes 1..K.
+    template <std::size_t K>
+    std::uint32_t linearIndex(std::uint32_t bin0, const std::array<double, K>& rest) const {
+      std::uint32_t lin = bin0;
+      for (std::size_t k = 0; k < K; ++k)
+        lin += static_cast<std::uint32_t>(strides_[k + 1]) * binIndex(k + 1, rest[k]);
+      return lin;
+    }
+
     std::vector<std::uint32_t> unravel(std::uint32_t lin) const;
 
     // boost::histogram with the same axes, holding the given dense (flow-inclusive) values.

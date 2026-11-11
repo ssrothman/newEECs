@@ -1,5 +1,6 @@
 #include "SRothman/EECs/interface/ProjectedENC.h"
 #include "SRothman/EECs/interface/ProjectedENCRuntime.h"
+#include "TestHelpers.h"
 #include "TestJets.h"
 
 #include <catch.hpp>
@@ -13,6 +14,9 @@
 
 using namespace eec;
 using fastjet::PseudoJet;
+using eectest::requireClose;
+using eectest::sum;
+using eectest::toDense;
 
 namespace {
 
@@ -25,7 +29,7 @@ namespace {
     return std::acos(std::clamp(c, -1.0, 1.0));
   }
   // Most tests use Energy weights, SumEnergy norm and DeltaR angles.
-  template <int N, class Out, class Extra = NoExtra, class Strat = strategy::DefaultFor<Out>>
+  template <std::size_t N, class Out, class Extra = NoExtra, class Strat = strategy::DefaultFor<Out>>
   using EDR = ProjectedENC<N, weight::Energy, norm::SumEnergy, angle::DeltaR, Out, Extra, Strat>;
   template <class Out, class Extra = NoExtra>
   using EDRRuntimeN = ProjectedENCRuntimeN<weight::Energy, norm::SumEnergy, angle::DeltaR, Out, Extra>;
@@ -35,7 +39,7 @@ namespace {
 
   template <class W, class Nrm>
   std::vector<double> oracle(const std::vector<PseudoJet>& ps,
-                             int N,
+                             std::size_t N,
                              double n,
                              const RefAngle& ang,
                              const Binning& b,
@@ -49,16 +53,16 @@ namespace {
     std::vector<std::size_t> t(N, 0);
     while (true) {
       double w = 1, th = 0;
-      for (int a = 0; a < N; ++a) {
+      for (std::size_t a = 0; a < N; ++a) {
         w *= std::pow(W::value(ps[t[a]]) / E, n);
-        for (int c = a + 1; c < N; ++c)
+        for (std::size_t c = a + 1; c < N; ++c)
           th = std::max(th, ang(ps[t[a]], ps[t[c]]));
       }
       std::uint32_t bin = b.binIndex(0, th);
       if (extra)
         bin += b.stride(1) * b.binIndex(1, extra(t));
       out[bin] += w;
-      int k = 0;
+      std::size_t k = 0;
       while (k < N && ++t[k] == M)
         t[k++] = 0;
       if (k == N)
@@ -67,81 +71,16 @@ namespace {
     return out;
   }
 
-  // ---- projections of every output type onto a dense histogram ----
-  std::vector<double> toDense(const DenseResult& r, const Binning&) { return r.values; }
-  std::vector<double> toDense(const SparseResult& r, const Binning& b) {
-    std::vector<double> out(b.totalBins(), 0.0);
-    for (std::size_t i = 0; i < r.entries.size(); ++i) {
-      if (i > 0)
-        REQUIRE(r.entries[i - 1].bin < r.entries[i].bin);
-      out[r.entries[i].bin] += r.entries[i].weight;
-    }
-    return out;
-  }
-  std::vector<double> toDense(const SparseUnmergedResult& r, const Binning& b) {
-    std::vector<double> out(b.totalBins(), 0.0);
-    for (const auto& e : r.entries)
-      out[e.bin] += e.weight * e.symfactor;
-    return out;
-  }
-  template <std::size_t D>
-  std::vector<double> toDense(const UnbinnedResult<D>& r, const Binning& b) {
-    std::vector<double> out(b.totalBins(), 0.0);
-    for (const auto& e : r.entries)
-      out[b.linearIndex(e.coord)] += e.weight * e.symfactor;
-    return out;
-  }
-
-  void requireClose(const std::vector<double>& a, const std::vector<double>& b) {
-    REQUIRE(a.size() == b.size());
-    double scale = 0;
-    for (double x : b)
-      scale = std::max(scale, std::abs(x));
-    for (std::size_t i = 0; i < a.size(); ++i) {
-      INFO("bin " << i);
-      REQUIRE(a[i] == Approx(b[i]).margin(1e-12 * std::max(scale, 1.0)));
-    }
-  }
-
-  template <int N, class W, class Nrm, class A, class Out, class Strat>
+  template <std::size_t N, class W, class Nrm, class A, class Out, class Strat>
   void compareOne(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
-    INFO("N=" << N);
-    const auto ref = oracle<W, Nrm>(ps, N, n, ang, b);
-    if constexpr (Out::binned) {
-      ProjectedENC<N, W, Nrm, A, Out, NoExtra, Strat> calc(n, b);
-      requireClose(toDense(calc(ps), b), ref);
-    } else {
-      ProjectedENC<N, W, Nrm, A, Out, NoExtra, Strat> calc(n);
-      requireClose(toDense(calc(ps), b), ref);
-    }
+    requireClose(toDense(eectest::runPENC<N, W, Nrm, A, Out, Strat>(ps, n, b), b), oracle<W, Nrm>(ps, N, n, ang, b));
   }
 
-  template <int N, class W, class Nrm, class A, class Out, class Loop>
-  void compareLoop(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
-    using strategy::Strategy;
-    namespace pre = strategy::precompute;
-    compareOne<N, W, Nrm, A, Out, Strategy<Loop, pre::None>>(ps, n, ang, b);
-    compareOne<N, W, Nrm, A, Out, Strategy<Loop, pre::PairAngles>>(ps, n, ang, b);
-    if constexpr (Out::binned)
-      compareOne<N, W, Nrm, A, Out, Strategy<Loop, pre::PairBins>>(ps, n, ang, b);
-  }
-
-  template <int N, class W, class Nrm, class A, class Out>
-  void compareStrategies(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
-    compareLoop<N, W, Nrm, A, Out, strategy::loop::Ordered>(ps, n, ang, b);
-    compareLoop<N, W, Nrm, A, Out, strategy::loop::Multiset>(ps, n, ang, b);
-  }
-
-  template <int N, class W, class Nrm, class A>
+  template <std::size_t N, class W, class Nrm, class A>
   void compareAll(const std::vector<PseudoJet>& ps, double n, const RefAngle& ang, const Binning& b) {
-    compareStrategies<N, W, Nrm, A, output::Dense>(ps, n, ang, b);
-    compareStrategies<N, W, Nrm, A, output::SparseMerged>(ps, n, ang, b);
-    compareStrategies<N, W, Nrm, A, output::SparseMergedSort>(ps, n, ang, b);
-    compareStrategies<N, W, Nrm, A, output::SparseUnmerged>(ps, n, ang, b);
-    compareStrategies<N, W, Nrm, A, output::Unbinned>(ps, n, ang, b);
+    const auto ref = oracle<W, Nrm>(ps, N, n, ang, b);
+    eectest::forEachConfig<N, W, Nrm, A>(ps, n, b, [&](const std::vector<double>& got) { requireClose(got, ref); });
   }
-
-  double sum(const std::vector<double>& v) { return std::accumulate(v.begin(), v.end(), 0.0); }
 
   // Smallest pairwise DeltaR in the tuple; permutation-symmetric.
   struct MinPairDR {
@@ -249,7 +188,7 @@ TEST_CASE("pENC normalisation and multiset bookkeeping", "[penc]") {
   const auto ps = eectest::randomJet(14, 3);
   Binning b({LogAxis(10, 1e-2, 1.0)});
   // expected = C(M + N - 1, N) multisets for M = 14.
-  auto checkN = [&](auto calc, int N, std::size_t expected) {
+  auto checkN = [&](auto calc, std::size_t N, std::size_t expected) {
     INFO("N=" << N);
     const auto r = calc(ps);
     REQUIRE(r.entries.size() == expected);
@@ -419,4 +358,17 @@ TEST_CASE("updateExtra reconfigures Extra between jets", "[penc][extra]") {
   EDRRuntimeN<output::Dense, ConstExtra> rt(4, 1.0, b);
   rt.updateExtra(0.6);
   CHECK(extraBinWeight(rt(ps), 0.6) == Approx(1.0));
+}
+
+TEST_CASE("pENC calculators reject a non-finite n", "[penc]") {
+  const Binning b({RegularAxis(10, 0.0, 1.0)});
+  for (double bad : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                     -std::numeric_limits<double>::infinity()}) {
+    CHECK_THROWS_AS((EDR<2, output::Dense>(bad, b)), std::invalid_argument);
+    CHECK_THROWS_AS((EDR<2, output::Unbinned>(bad)), std::invalid_argument);
+    CHECK_THROWS_AS((EDRRuntimeN<output::Dense>(3, bad, b)), std::invalid_argument);
+    CHECK_THROWS_AS((EDRRuntimeN<output::Unbinned>(3, bad)), std::invalid_argument);
+  }
+  CHECK_NOTHROW((EDR<2, output::Dense>(0.5, b)));
+  CHECK_NOTHROW((EDRRuntimeN<output::Unbinned>(3, -1.0)));
 }
