@@ -46,10 +46,18 @@ def _finish(process, label, producer, output, axes, D, table, tableName, coordNa
             task.add(tab)
     if not aggregate:
         return None
-    agg = cms.EDAnalyzer('EECAggregator_' + output, src=cms.InputTag(label),
-                         genEventInfo=cms.InputTag(genEventInfo), maxBins=cms.uint32(5000),
+    return addAggregator(process, label + 'Aggregator', label, output, axes, genEventInfo)
+
+
+def addAggregator(process, label, src, output, axes, genEventInfo='generator', maxBins=5000):
+    """EECAggregator for the binned results `src`; axes must match the producer's. Put it on a Path (e.g. after a
+    channel filter); its TFileService directory is `label`."""
+    if output == 'Unbinned' or output not in OUTPUTS:
+        raise ValueError('aggregation needs a binned output, got %s' % output)
+    agg = cms.EDAnalyzer('EECAggregator_' + output, src=cms.InputTag(src),
+                         genEventInfo=cms.InputTag(genEventInfo), maxBins=cms.uint32(maxBins),
                          axes=cms.VPSet(*axes))
-    setattr(process, label + 'Aggregator', agg)
+    setattr(process, label, agg)
     return agg
 
 
