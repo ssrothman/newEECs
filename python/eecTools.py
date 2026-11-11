@@ -1,97 +1,82 @@
-"""Helpers to add EEC producers, NanoAOD tables and aggregators to a cms.Process.
+"""Helpers to add EEC producers, NanoAOD tables and aggregators to a cms.Process from observable specs.
 
-Module types are registered in plugins/*Modules.cc as
+Every value comes from the caller's spec (see simulation/configs/default.yaml in boostedV); there are no physics
+defaults here. Module types are registered in plugins/*Modules.cc as
 PENCProducer_<Weight>_<Angle>_<Output> and E1CProducer_<Weight>_<Output>.
+
+Observable spec keys:
+  kind: penc | e1c;  n, weight, output, norm, axes (binned outputs only; a list of axis specs)
+  penc: N, angle;  e1c: frame
+  table: {weightPrecision, coordPrecision, coordNames (unbinned only)}
+Axis spec: {type: regular|log, nbins, lo, hi} or {type: variable, edges}.
 """
 import FWCore.ParameterSet.Config as cms
 
 OUTPUTS = ('Dense', 'SparseMerged', 'SparseUnmerged', 'Unbinned')
 
 
-def regularAxis(nbins, lo, hi):
-    return cms.PSet(type=cms.string('regular'), nbins=cms.uint32(nbins), lo=cms.double(lo),
-                    hi=cms.double(hi), edges=cms.vdouble())
+def axisPSet(a):
+    if a['type'] == 'variable':
+        return cms.PSet(type=cms.string('variable'), nbins=cms.uint32(0), lo=cms.double(0), hi=cms.double(0),
+                        edges=cms.vdouble(*a['edges']))
+    return cms.PSet(type=cms.string(a['type']), nbins=cms.uint32(a['nbins']), lo=cms.double(a['lo']),
+                    hi=cms.double(a['hi']), edges=cms.vdouble())
 
 
-def logAxis(nbins, lo, hi):
-    return cms.PSet(type=cms.string('log'), nbins=cms.uint32(nbins), lo=cms.double(lo),
-                    hi=cms.double(hi), edges=cms.vdouble())
+def _rank(spec):
+    return 1 if spec['kind'] == 'penc' else 2
 
 
-def variableAxis(edges):
-    return cms.PSet(type=cms.string('variable'), nbins=cms.uint32(0), lo=cms.double(0),
-                    hi=cms.double(0), edges=cms.vdouble(*edges))
+def _check(name, spec):
+    if spec['output'] not in OUTPUTS:
+        raise ValueError('%s: output must be one of %s, got %s' % (name, OUTPUTS, spec['output']))
+    if spec['kind'] not in ('penc', 'e1c'):
+        raise ValueError('%s: kind must be penc or e1c' % name)
+    binned = spec['output'] != 'Unbinned'
+    if binned and len(spec.get('axes', [])) != _rank(spec):
+        raise ValueError('%s: output %s needs %d axes' % (name, spec['output'], _rank(spec)))
+    if not binned and 'axes' in spec:
+        raise ValueError('%s: unbinned output takes no axes' % name)
 
 
-def _finish(process, label, producer, output, axes, D, table, tableName, coordNames,
-            aggregate, genEventInfo, task):
-    """Attach producer, optional table (label 'Table' suffix, so the default NANO keep rule matches)
-    and optional aggregator. Returns the aggregator, which must be put on a Path or EndPath."""
-    binned = output != 'Unbinned'
-    setattr(process, label, producer)
-    if task is not None:
-        task.add(producer)
-    if table:
-        if binned:
-            tab = cms.EDProducer('EECTableProducer_' + output, src=cms.InputTag(label),
-                                 name=cms.string(tableName or label), doc=cms.string(''),
-                                 weightPrecision=cms.int32(-1), axes=cms.VPSet(*axes))
-        else:
-            tab = cms.EDProducer('EECTableProducer_Unbinned%d' % D, src=cms.InputTag(label),
-                                 name=cms.string(tableName or label), doc=cms.string(''),
-                                 weightPrecision=cms.int32(-1),
-                                 coordNames=cms.vstring(*coordNames), coordPrecision=cms.int32(-1))
-        setattr(process, label + 'Table', tab)
+def addObservable(process, label, src, spec, tableName, task=None):
+    """Producer `label` for the EECJetCollection `src` and its NanoAOD tables `<label>Table` (the suffix matches the
+    default NANO keep rule), named tableName / tableName + 'Entries'."""
+    _check(label, spec)
+    binned = spec['output'] != 'Unbinned'
+    if spec['kind'] == 'penc':
+        p = cms.EDProducer('PENCProducer_%s_%s_%s' % (spec['weight'], spec['angle'], spec['output']),
+                           src=cms.InputTag(src), N=cms.uint32(spec['N']), n=cms.double(spec['n']),
+                           norm=cms.string(spec['norm']))
+    else:
+        p = cms.EDProducer('E1CProducer_%s_%s' % (spec['weight'], spec['output']), src=cms.InputTag(src),
+                           n=cms.double(spec['n']), norm=cms.string(spec['norm']), frame=cms.string(spec['frame']))
+    t = spec['table']
+    if binned:
+        axes = [axisPSet(a) for a in spec['axes']]
+        p.axes = cms.VPSet(*axes)
+        tab = cms.EDProducer('EECTableProducer_' + spec['output'], src=cms.InputTag(label), name=cms.string(tableName),
+                             doc=cms.string(''), weightPrecision=cms.int32(t['weightPrecision']), axes=cms.VPSet(*axes))
+    else:
+        tab = cms.EDProducer('EECTableProducer_Unbinned%d' % _rank(spec), src=cms.InputTag(label),
+                             name=cms.string(tableName), doc=cms.string(''),
+                             weightPrecision=cms.int32(t['weightPrecision']), coordNames=cms.vstring(*t['coordNames']),
+                             coordPrecision=cms.int32(t['coordPrecision']))
+    for lab, mod in ((label, p), (label + 'Table', tab)):
+        setattr(process, lab, mod)
         if task is not None:
-            task.add(tab)
-    if not aggregate:
-        return None
-    return addAggregator(process, label + 'Aggregator', label, output, axes, genEventInfo)
+            task.add(mod)
+    return p
 
 
-def addAggregator(process, label, src, output, axes, genEventInfo='generator', maxBins=5000):
-    """EECAggregator for the binned results `src`; axes must match the producer's. Put it on a Path (e.g. after a
-    channel filter); its TFileService directory is `label`."""
-    if output == 'Unbinned' or output not in OUTPUTS:
-        raise ValueError('aggregation needs a binned output, got %s' % output)
-    agg = cms.EDAnalyzer('EECAggregator_' + output, src=cms.InputTag(src),
+def addAggregator(process, label, src, spec, genEventInfo, maxBins):
+    """EECAggregator for the binned results `src` produced from `spec`. Put it on a Path (e.g. after a channel
+    filter); its TFileService directory is `label`. genEventInfo '' means unit weights (data)."""
+    _check(label, spec)
+    if spec['output'] == 'Unbinned':
+        raise ValueError('%s: aggregation needs a binned output' % label)
+    agg = cms.EDAnalyzer('EECAggregator_' + spec['output'], src=cms.InputTag(src),
                          genEventInfo=cms.InputTag(genEventInfo), maxBins=cms.uint32(maxBins),
-                         axes=cms.VPSet(*axes))
+                         axes=cms.VPSet(*[axisPSet(a) for a in spec['axes']]))
     setattr(process, label, agg)
     return agg
-
-
-def _check(output, axes, rank, aggregate):
-    if output not in OUTPUTS:
-        raise ValueError('output must be one of %s, got %s' % (OUTPUTS, output))
-    if output != 'Unbinned' and (axes is None or len(axes) != rank):
-        raise ValueError('output %s needs %d axes' % (output, rank))
-    if aggregate and output == 'Unbinned':
-        raise ValueError('aggregation needs a binned output, got Unbinned')
-
-
-def addPENC(process, label, src, N, n=1.0, weight='Pt', angle='DeltaR', output='SparseMerged',
-            norm='sumPt', axes=None, table=True, tableName=None, aggregate=False,
-            genEventInfo='generator', task=None):
-    """Projected N-point correlator of the EECJetCollection `src`. axes: [one axis PSet] for binned outputs.
-    genEventInfo='' aggregates with unit weights (data)."""
-    _check(output, axes, 1, aggregate)
-    p = cms.EDProducer('PENCProducer_%s_%s_%s' % (weight, angle, output), src=cms.InputTag(src),
-                       N=cms.uint32(N), n=cms.double(n), norm=cms.string(norm))
-    if output != 'Unbinned':
-        p.axes = cms.VPSet(*axes)
-    return _finish(process, label, p, output, axes, 1, table, tableName, ['angle'],
-                   aggregate, genEventInfo, task)
-
-
-def addE1C(process, label, src, n=1.0, weight='Pt', output='SparseMerged', norm='sumPt',
-           frame='jetHelicity', axes=None, table=True, tableName=None, aggregate=False,
-           genEventInfo='generator', task=None):
-    """One-point correlator (theta, phi) in `frame` (lab, jetHelicity, jetCS). axes: [theta, phi] PSets."""
-    _check(output, axes, 2, aggregate)
-    p = cms.EDProducer('E1CProducer_%s_%s' % (weight, output), src=cms.InputTag(src),
-                       n=cms.double(n), norm=cms.string(norm), frame=cms.string(frame))
-    if output != 'Unbinned':
-        p.axes = cms.VPSet(*axes)
-    return _finish(process, label, p, output, axes, 2, table, tableName, ['theta', 'phi'],
-                   aggregate, genEventInfo, task)

@@ -407,6 +407,7 @@ and write `std::vector<Result>`, with one result per jet in input order.
   - It writes into its module's TFileService directory: `values` (TH1D over linear bins, error √Cᵢᵢ), `covariance` (TH2D), `axis<k>` (an empty TH1D carrying the edges), `axisTypes` (TNamed), `sumW`, `sumW2` and `nEvents` (TParameter).
   - A TH2D of `maxBins`² doubles must fit in memory.
 - **Python** (`SRothman.EECs.eecTools`):
-  - `addPENC` and `addE1C` create the producer, `<label>Table` and optionally `<label>Aggregator`, and return the aggregator. The `Table` suffix matches the default NanoAOD keep rule. The aggregator must be put on a Path or EndPath.
-  - `regularAxis`, `logAxis` and `variableAxis` build axis PSets.
+  - `addObservable(process, label, src, spec, tableName)` creates the producer and `<label>Table`; the `Table` suffix matches the default NanoAOD keep rule.
+  - `addAggregator(process, label, src, spec, genEventInfo, maxBins)` creates an aggregator, which must be put on a Path or EndPath.
+  - `spec` is one entry of `observables` in the boostedV analysis YAML (`simulation/configs/default.yaml`). The helpers have no physics defaults; `axisPSet` turns an axis spec into a PSet.
 - **Tests:** `test/test_plugins.cc` (scram only) runs each module type family through `edm::test::TestProcessor` and checks the results against direct library calls and hand-computed values.
