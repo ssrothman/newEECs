@@ -11,6 +11,7 @@
 - [8. State, threading and errors](#8-state-threading-and-errors)
 - [9. Extending the library](#9-extending-the-library)
 - [10. Event aggregation and covariance](#10-event-aggregation-and-covariance)
+- [11. CMSSW plugins](#11-cmssw-plugins)
 
 Everything lives in namespace `eec`. Include `SRothman/EECs/interface/EECs.h` for all calculators.
 
@@ -370,3 +371,42 @@ H = Σₑ wₑ hₑ and C = Σₑ wₑ² hₑ hₑᵀ, plus Σw, Σw² and the e
 - `merge(other)` adds an accumulator over the same number of bins, for example one per stream.
 - `beginEvent()` discards a partial event left by an exception. Not thread-safe.
 - The mean-subtracted covariance is formed afterwards from these sums. `bench/bench_cov.cc` measures the per-event cost.
+
+## 11. CMSSW plugins
+Built by scram only (`plugins/`, `python/`). The plugins read a `srothman::EECJetCollection` (package `SRothman/DataFormats`)
+and write `std::vector<Result>`, with one result per jet in input order.
+
+**Runtime configuration helpers** (`interface/Config.h`, framework-free, in the library):
+- `parseNorm` / `normValue`: E_jet ∈ {`sumE`, `sumPt`, `jetE`, `jetPt`, `unity`}. The plugins always use `norm::External` and pass this value, so the result meta still records E_jet.
+- `AxisSpec`, `makeAxis`, `makeBinning`: axes from (type `regular|log|variable`, nbins, lo, hi, edges). `axisType` and `axisEdges` describe an axis for output files.
+- `parseFrame` / `makeFrame`: E1C frames as `frame::BoostRotate`:
+  - `lab`: lab polar angle and azimuth.
+  - `jetHelicity`: jet rest frame; z is the jet direction, and x lies in the plane of the jet and the beam, on the +z beam side.
+  - `jetCS`: jet rest frame with Collins–Soper axes. z bisects p_A and −p_B, and x points opposite to p_A + p_B. Beam A is the beam moving along sign(jet p_z).
+  - It throws for a jet that is not timelike or has degenerate axes, for example a jet along the beam.
+
+**Module types** (`plugins/*Modules.cc`; adding a combination takes one macro line):
+
+| Module | Product | Parameters |
+|---|---|---|
+| `PENCProducer_<Energy\|Pt>_<DeltaR\|Angle3D>_<Output>` | `std::vector<Output result>` | `src`, `N` (2–6), `n`, `norm`, `axes` (binned outputs, 1 axis) |
+| `E1CProducer_<Energy\|Pt>_<Output>` | same (`UnbinnedResult<2>` when unbinned) | `src`, `n`, `norm`, `frame`, `axes` (binned outputs, 2 axes) |
+| `EECTableProducer_<Dense\|SparseMerged\|SparseUnmerged\|Unbinned1\|Unbinned2>` | NanoAOD `FlatTable`s | `src`, `name`, `doc`, `weightPrecision`; `axes` (binned) or `coordNames`, `coordPrecision` (unbinned) |
+| `EECAggregator_<Dense\|SparseMerged\|SparseUnmerged>` | TFileService objects | `src`, `genEventInfo` (empty: unit weights), `maxBins`, `axes` |
+
+- `<Output>` is one of `Dense`, `SparseMerged`, `SparseUnmerged` or `Unbinned`.
+- A jet with no constituents gets an empty result: no entries, or all-zero bins for `Dense`. Its E_jet is computed as usual, for example 0 for `sumPt`.
+- Any library exception for a jet is rethrown as `cms::Exception("EECs")`. Configuration errors throw `cms::Exception("Configuration")`.
+- **Tables:**
+  - The event table `<name>` has one row per jet: `E_jet`, `n`, `N` and `nEntries`.
+  - The event table `<name>Entries` has `iJet`, then `bin` or the coordinates, then `weight`. Unmerged and unbinned outputs also have `symfactor`.
+  - The run tables `<name>Axis<k>` (column `edge`) and `<name>AxisType` (column `type`: 0 regular, 1 log, 2 variable) are written for binned outputs only.
+  - `Dense` writes every bin.
+- **Aggregator:**
+  - For each event it sums all jets' results into hₑ and feeds a `CovarianceAccumulator` with weight `GenEventInfoProduct::weight()`.
+  - It writes into its module's TFileService directory: `values` (TH1D over linear bins, error √Cᵢᵢ), `covariance` (TH2D), `axis<k>` (an empty TH1D carrying the edges), `axisTypes` (TNamed), `sumW`, `sumW2` and `nEvents` (TParameter).
+  - A TH2D of `maxBins`² doubles must fit in memory.
+- **Python** (`SRothman.EECs.eecTools`):
+  - `addPENC` and `addE1C` create the producer, `<label>Table` and optionally `<label>Aggregator`, and return the aggregator. The `Table` suffix matches the default NanoAOD keep rule. The aggregator must be put on a Path or EndPath.
+  - `regularAxis`, `logAxis` and `variableAxis` build axis PSets.
+- **Tests:** `test/test_plugins.cc` (scram only) runs each module type family through `edm::test::TestProcessor` and checks the results against direct library calls and hand-computed values.

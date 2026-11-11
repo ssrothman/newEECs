@@ -1,0 +1,13 @@
+<use name="FWCore/Framework"/>
+<use name="FWCore/ParameterSet"/>
+<use name="FWCore/ServiceRegistry"/>
+<use name="FWCore/Utilities"/>
+<use name="DataFormats/NanoAOD"/>
+<use name="SimDataFormats/GeneratorProducts"/>
+<use name="CommonTools/UtilAlgos"/>
+<use name="SRothman/DataFormats"/>
+<use name="SRothman/EECs"/>
+<use name="root"/>
+<library file="*.cc" name="SRothmanEECsPlugins">
+  <flags EDM_PLUGIN="1"/>
+</library>

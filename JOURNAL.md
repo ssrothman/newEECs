@@ -10,6 +10,7 @@
 - [2026-11-11 Inner-loop optimisation study](#2026-11-11-inner-loop-optimisation-study)
 - [2026-11-11 Peeled last level, rotating-jet benchmark](#2026-11-11-peeled-last-level-rotating-jet-benchmark)
 - [2026-11-11 CovarianceAccumulator](#2026-11-11-covarianceaccumulator)
+- [2026-11-11 CMSSW plugins](#2026-11-11-cmssw-plugins)
 
 ## 2026-11-10 Initial implementation
 - Plan: `simulation/stepA.md` §A.1; decisions agreed with user are in README "Conventions".
@@ -126,3 +127,12 @@ Prototypes in scratch copies only; library unchanged. Dense, Energy/SumEnergy/De
 - `interface/Covariance.h`: packed upper triangle; sparse update over the touched bins (sorted, so row-wise writes).
 - Bench (GCC 12, -O2): 2704 bins (52×52 E1C) costs 2.1 µs/event for 50 random adds, 68 µs for 300, and 1.07 ms with every bin touched; 52 bins, 52 adds: 0.6 µs.
 - Tests compare against a dense brute force (n = 1, 2, 7, 40; signed weights; repeated bins). Mutations (w for w², no merge of repeated bins, no diagonal, no reset of an abandoned event, merge skipping C) all fail the tests now; the abandoned-event mutation needed a stronger test that re-fills an abandoned bin.
+
+## 2026-11-11 CMSSW plugins
+- 32 module types (16 pENC, 8 E1C, 5 tables, 3 aggregators); a full scram build of the plugins takes about 25 s of wall time with -j8.
+- Traps: a `std::make_unique<FlatTable>(...)` with dependent arguments is itself dependent, so the type must be spelled out before calling `addColumn<T>`.
+  TFileService already makes a directory per module label. `TVectorD` has no name, so edges are stored as an empty TH1D binning.
+  `TestProcessor` needs `JobReportService` for TFileService. Calling `testBeginRun` after `test()` crashed in `clearPrincipal`, so run tables are tested first.
+- Tests: TestProcessor results compared against direct library calls. The lab-frame E1C is checked against `PseudoJet::theta` and atan2. The aggregator is checked against a hand-computed H and C.
+  Mutations caught: ignored norm, ignored frame, symfactor column, unit gen weight, dropped empty jets, wrong iJet, and unmerged symfactor in the aggregator (this last one needed an extra test).
+- The library config helpers have their own mutation check: CS sign flip, CS x sign, helicity x axis, jetPt vs jetE, and a missing unboost all fail the tests.

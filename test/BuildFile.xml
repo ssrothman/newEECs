@@ -1,4 +1,13 @@
-<bin name="testSRothmanEECs" file="test_main.cc,test_policies.cc,test_binning_outputs.cc,test_penc.cc,test_e1c.cc,test_sum_rule.cc,test_warnings.cc,test_concepts.cc,test_covariance.cc">
+<bin name="testSRothmanEECs" file="test_main.cc,test_policies.cc,test_binning_outputs.cc,test_penc.cc,test_e1c.cc,test_sum_rule.cc,test_warnings.cc,test_concepts.cc,test_covariance.cc,test_config.cc">
   <use name="catch2"/>
+  <use name="SRothman/EECs"/>
+</bin>
+<bin name="testSRothmanEECsPlugins" file="test_plugins.cc">
+  <use name="catch2"/>
+  <use name="root"/>
+  <use name="FWCore/TestProcessor"/>
+  <use name="DataFormats/NanoAOD"/>
+  <use name="SimDataFormats/GeneratorProducts"/>
+  <use name="SRothman/DataFormats"/>
   <use name="SRothman/EECs"/>
 </bin>

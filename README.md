@@ -51,5 +51,8 @@ Calculators keep per-jet scratch space: use one instance per thread.
 - `angle::DeltaR` uses pseudorapidity. `frame::BoostRotate` takes its z and x axes in the rest frame.
 - Merged sparse outputs keep a bin that was filled even if its weights cancel to zero.
 
+## CMSSW plugins
+`plugins/` provides EDM producers for pENC and E1C, NanoAOD table producers and an aggregating analyzer with covariance. `python/eecTools.py` wires them into a process. See `docs/guide.md` §11.
+
 ## Extending
 `docs/guide.md` is the reference for the policy interfaces, outputs, strategies, errors and how to add new policies.
