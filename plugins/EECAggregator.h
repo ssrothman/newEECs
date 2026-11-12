@@ -21,7 +21,7 @@
 #include <vector>
 
 // Sums the binned EEC results of all jets of an event into h_e and aggregates H = sum w h_e and
-// C = sum w^2 h_e h_e^T with w the generator weight (1 if genEventInfo is empty). Writes to the module's
+// C = sum w^2 h_e h_e^T with w the generator weight (1 if genEventInfo is empty) times every double in `weights`. Writes to the module's
 // TFileService directory: values (TH1D over linear bins, errors sqrt(C_ii)), covariance (TH2D), axis<k>
 // (empty TH1D carrying the bin edges of axis k), axisTypes (TNamed, comma-separated), sumW, sumW2, nEvents (TParameter).
 template <class Result>
@@ -36,6 +36,8 @@ public:
     const auto gen = cfg.getParameter<edm::InputTag>("genEventInfo");
     if (!gen.label().empty())
       gen_ = consumes(gen);
+    for (const auto& t : cfg.getParameter<std::vector<edm::InputTag>>("weights"))
+      weights_.push_back(consumes<double>(t));
     usesResource(TFileService::kSharedResource);
   }
 
@@ -43,13 +45,16 @@ public:
     edm::ParameterSetDescription desc;
     desc.add<edm::InputTag>("src", edm::InputTag("eec"));
     desc.add<edm::InputTag>("genEventInfo", edm::InputTag("generator"))->setComment("empty label: unit weights");
+    desc.add<std::vector<edm::InputTag>>("weights", {})->setComment("event weights (double) multiplied into w");
     desc.add<unsigned>("maxBins", 5000)->setComment("upper bound on the flow-inclusive bin count (memory guard)");
     eecplugin::addAxes(desc, {eecplugin::axisPSet("log", 50, 1e-3, 1.0)});
     descriptions.addWithDefaultLabel(desc);
   }
 
   void analyze(const edm::Event& event, const edm::EventSetup&) override {
-    const double w = gen_ ? event.get(*gen_).weight() : 1.0;
+    double w = gen_ ? event.get(*gen_).weight() : 1.0;
+    for (const auto& t : weights_)
+      w *= event.get(t);
     const auto& results = event.get(src_);
     acc_.beginEvent();
     for (const auto& r : results) {
@@ -118,6 +123,7 @@ public:
 private:
   const edm::EDGetTokenT<std::vector<Result>> src_;
   std::optional<edm::EDGetTokenT<GenEventInfoProduct>> gen_;
+  std::vector<edm::EDGetTokenT<double>> weights_;
   const eec::Binning binning_;
   eec::CovarianceAccumulator acc_;
 };

@@ -402,3 +402,41 @@ TEST_CASE("EECAggregator multiplies unmerged weights by their symmetry factors",
   f.Close();
   std::remove(file.c_str());
 }
+
+TEST_CASE("EECAggregator multiplies the extra weights into the generator weight", "[plugins][aggregator]") {
+  const std::string file = "testEECAggregatorW_" + std::to_string(::getpid()) + ".root";
+  {
+    edm::test::TestProcessor::Config config{
+        std::string(kHeader) +
+        "process.toTest = cms.EDAnalyzer('EECAggregator_SparseMerged', src = cms.InputTag('res'), genEventInfo = "
+        "cms.InputTag('generator'), weights = cms.VInputTag('sfA', 'sfB'), maxBins = cms.uint32(100), axes = "
+        "cms.VPSet(cms.PSet(type = cms.string('regular'), nbins = cms.uint32(2), lo = cms.double(0), hi = "
+        "cms.double(1), edges = cms.vdouble())))\nprocess.moduleToTest(process.toTest)\n"
+        "process.add_(cms.Service('JobReportService'))\n"
+        "process.add_(cms.Service('TFileService', fileName = cms.string('" +
+        file + "')))\n"};
+    auto putRes = config.produces<std::vector<eec::SparseResult>>("res");
+    auto putGen = config.produces<GenEventInfoProduct>("generator");
+    auto putA = config.produces<double>("sfA");
+    auto putB = config.produces<double>("sfB");
+    edm::test::TestProcessor tester(config);
+    auto gen = std::make_unique<GenEventInfoProduct>();
+    gen->setWeights({2.0});
+    // w = 2 * 0.9 * 1.5 = 2.7; h = (0, 0.5, 0, 0).
+    std::vector<eec::SparseResult> r(1);
+    r[0].entries = {{1, 0.5}};
+    tester.test(std::make_pair(putRes, std::make_unique<std::vector<eec::SparseResult>>(r)),
+                std::make_pair(putGen, std::move(gen)), std::make_pair(putA, std::make_unique<double>(0.9)),
+                std::make_pair(putB, std::make_unique<double>(1.5)));
+  }
+  TFile f(file.c_str(), "READ");
+  auto* values = f.Get<TH1D>("toTest/values");
+  auto* cov = f.Get<TH2D>("toTest/covariance");
+  REQUIRE(values);
+  REQUIRE(cov);
+  CHECK(values->GetBinContent(2) == Approx(2.7 * 0.5));
+  CHECK(cov->GetBinContent(2, 2) == Approx(2.7 * 2.7 * 0.25));
+  CHECK(f.Get<TParameter<double>>("toTest/sumW")->GetVal() == Approx(2.7));
+  f.Close();
+  std::remove(file.c_str());
+}
