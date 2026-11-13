@@ -36,11 +36,12 @@ namespace eec::config {
 
   // E1C frames for a jet with four-momentum `jet`:
   //  Lab:         lab polar angle and azimuth.
+  //  JetAxis:     lab frame (no boost); z along the jet direction, x in the plane of z and the beam (toward +z beam).
   //  JetHelicity: jet rest frame; z along the jet direction, x in the plane of z and the beam (toward +z beam).
   //  JetCS:       jet rest frame, Collins-Soper axes: z bisects p_A and -p_B, x opposite to p_A + p_B, where
   //               beam A is the beam moving along sign(jet pz) (beam +z if pz = 0).
-  enum class FrameKind { Lab, JetHelicity, JetCS };
-  // Accepts "lab", "jetHelicity", "jetCS"; throws std::invalid_argument otherwise.
+  enum class FrameKind { Lab, JetAxis, JetHelicity, JetCS };
+  // Accepts "lab", "jetAxis", "jetHelicity", "jetCS"; throws std::invalid_argument otherwise.
   FrameKind parseFrame(const std::string& s);
   // Throws std::invalid_argument (from frame::BoostRotate) for a non-timelike jet or degenerate axes.
   frame::BoostRotate makeFrame(FrameKind kind, const fastjet::PseudoJet& jet);

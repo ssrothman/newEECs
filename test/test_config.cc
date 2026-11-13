@@ -113,3 +113,27 @@ TEST_CASE("Helicity frame: a particle along the jet has theta 0", "[config][fram
   CHECK_THROWS_AS(parseFrame("helicity"), std::invalid_argument);
   CHECK_THROWS_AS(makeFrame(FrameKind::JetHelicity, fastjet::PseudoJet(1, 0, 0, 1)), std::invalid_argument);
 }
+
+TEST_CASE("Jet-axis frame: lab angles around the jet axis, x toward the +z beam", "[config][frame]") {
+  // Massive jet off the beam axis; axes built in the lab: z = jet direction, x = +z_lab orthogonalised, y = z cross x.
+  const fastjet::PseudoJet jet(150, -90, 220, 330);
+  const double m = jet.modp();
+  const std::array<double, 3> z{{jet.px() / m, jet.py() / m, jet.pz() / m}};
+  std::array<double, 3> x{{-z[2] * z[0], -z[2] * z[1], 1 - z[2] * z[2]}};
+  const double xn = std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+  for (auto& c : x)
+    c /= xn;
+  const std::array<double, 3> y{{z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]}};
+  const auto ax = makeFrame(parseFrame("jetAxis"), jet);
+  const auto hel = makeFrame(FrameKind::JetHelicity, jet);
+  const fastjet::PseudoJet atRest(0, 0, 0, 1);
+  for (double theta : {0.01, 0.3, 1.2})
+    for (double phi : {-2.8, -0.4, 1.1, 2.9}) {
+      const auto p = fromRestFrame(theta, phi, x, y, z, atRest);  // no boost: built directly in the lab
+      const auto c = ax(p);
+      CHECK(c[0] == Approx(theta).margin(1e-9));
+      CHECK(c[1] == Approx(phi).margin(1e-9));
+      // The helicity frame boosts, so its theta differs: the jet-axis frame is not the helicity frame.
+      CHECK(std::abs(hel(p)[0] - theta) > 1e-3);
+    }
+}

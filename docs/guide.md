@@ -381,6 +381,7 @@ and write `std::vector<Result>`, with one result per jet in input order.
 - `AxisSpec`, `makeAxis`, `makeBinning`: axes from (type `regular|log|variable`, nbins, lo, hi, edges). `axisType` and `axisEdges` describe an axis for output files.
 - `parseFrame` / `makeFrame`: E1C frames as `frame::BoostRotate`:
   - `lab`: lab polar angle and azimuth.
+  - `jetAxis`: lab frame (no boost); z is the jet direction, and x lies in the plane of the jet and the beam, on the +z beam side.
   - `jetHelicity`: jet rest frame; z is the jet direction, and x lies in the plane of the jet and the beam, on the +z beam side.
   - `jetCS`: jet rest frame with Collins–Soper axes. z bisects p_A and −p_B, and x points opposite to p_A + p_B. Beam A is the beam moving along sign(jet p_z).
   - It throws for a jet that is not timelike or has degenerate axes, for example a jet along the beam.

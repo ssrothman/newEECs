@@ -47,7 +47,7 @@ public:
     desc.add<edm::InputTag>("src", edm::InputTag("eecJets"));
     desc.add<double>("n", 1.0)->setComment("power of the energy weights");
     desc.add<std::string>("norm", "sumPt")->setComment("E_jet: sumE, sumPt, jetE, jetPt or unity");
-    desc.add<std::string>("frame", "jetHelicity")->setComment("lab, jetHelicity or jetCS");
+    desc.add<std::string>("frame", "jetHelicity")->setComment("lab, jetAxis, jetHelicity or jetCS");
     if constexpr (Output::binned)
       eecplugin::addAxes(desc,
                          {eecplugin::axisPSet("regular", 20, 0.0, M_PI), eecplugin::axisPSet("regular", 20, -M_PI, M_PI)});

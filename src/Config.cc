@@ -79,6 +79,8 @@ namespace eec::config {
   FrameKind parseFrame(const std::string& s) {
     if (s == "lab")
       return FrameKind::Lab;
+    if (s == "jetAxis")
+      return FrameKind::JetAxis;
     if (s == "jetHelicity")
       return FrameKind::JetHelicity;
     if (s == "jetCS")
@@ -97,6 +99,8 @@ namespace eec::config {
     switch (kind) {
       case FrameKind::Lab:
         return frame::BoostRotate(fastjet::PseudoJet(0, 0, 0, 1), {{0, 0, 1}}, {{1, 0, 0}});
+      case FrameKind::JetAxis:
+        return frame::BoostRotate(fastjet::PseudoJet(0, 0, 0, 1), {{jet.px(), jet.py(), jet.pz()}}, {{0, 0, 1}});
       case FrameKind::JetHelicity: {
         // A boost along the jet direction leaves the plane of (jet, beam) unchanged, so lab vectors serve as rest-frame axes.
         return frame::BoostRotate(jet, {{jet.px(), jet.py(), jet.pz()}}, {{0, 0, 1}});
