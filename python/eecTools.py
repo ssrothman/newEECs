@@ -69,15 +69,16 @@ def addObservable(process, label, src, spec, tableName, task=None):
     return p
 
 
-def addAggregator(process, label, src, spec, genEventInfo, maxBins, weights=()):
+def addAggregator(process, label, src, spec, genEventInfo, maxBins, weights=(), jetMask=''):
     """EECAggregator for the binned results `src` produced from `spec`. Put it on a Path (e.g. after a channel
     filter); its TFileService directory is `label`. genEventInfo '' means unit weights (data); `weights` are
-    InputTags of extra per-event double weights."""
+    InputTags of extra per-event double weights; jetMask a std::vector<bool> aligned with src (true = skip the jet)."""
     _check(label, spec)
     if spec['output'] == 'Unbinned':
         raise ValueError('%s: aggregation needs a binned output' % label)
     agg = cms.EDAnalyzer('EECAggregator_' + spec['output'], src=cms.InputTag(src),
                          genEventInfo=cms.InputTag(genEventInfo), weights=cms.VInputTag(*weights),
+                         jetMask=cms.InputTag(jetMask),
                          maxBins=cms.uint32(maxBins),
                          axes=cms.VPSet(*[axisPSet(a) for a in spec['axes']]))
     setattr(process, label, agg)

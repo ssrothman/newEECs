@@ -20,7 +20,8 @@
 #include <string>
 #include <vector>
 
-// Sums the binned EEC results of all jets of an event into h_e and aggregates H = sum w h_e and
+// Sums the binned EEC results of the jets of an event (all, or those with jetMask false; jetMask is aligned with the
+// results) into h_e and aggregates H = sum w h_e and
 // C = sum w^2 h_e h_e^T with w the generator weight (1 if genEventInfo is empty) times every double in `weights`. Writes to the module's
 // TFileService directory: values (TH1D over linear bins, errors sqrt(C_ii)), covariance (TH2D), axis<k>
 // (empty TH1D carrying the bin edges of axis k), axisTypes (TNamed, comma-separated), sumW, sumW2, nEvents (TParameter).
@@ -38,6 +39,9 @@ public:
       gen_ = consumes(gen);
     for (const auto& t : cfg.getParameter<std::vector<edm::InputTag>>("weights"))
       weights_.push_back(consumes<double>(t));
+    const auto mask = cfg.getParameter<edm::InputTag>("jetMask");
+    if (!mask.label().empty())
+      mask_ = consumes(mask);
     usesResource(TFileService::kSharedResource);
   }
 
@@ -46,6 +50,8 @@ public:
     desc.add<edm::InputTag>("src", edm::InputTag("eec"));
     desc.add<edm::InputTag>("genEventInfo", edm::InputTag("generator"))->setComment("empty label: unit weights");
     desc.add<std::vector<edm::InputTag>>("weights", {})->setComment("event weights (double) multiplied into w");
+    desc.add<edm::InputTag>("jetMask", edm::InputTag(""))
+        ->setComment("std::vector<bool>, true = skip the jet; empty: none");
     desc.add<unsigned>("maxBins", 5000)->setComment("upper bound on the flow-inclusive bin count (memory guard)");
     eecplugin::addAxes(desc, {eecplugin::axisPSet("log", 50, 1e-3, 1.0)});
     descriptions.addWithDefaultLabel(desc);
@@ -56,12 +62,19 @@ public:
     for (const auto& t : weights_)
       w *= event.get(t);
     const auto& results = event.get(src_);
+    const std::vector<bool>* mask = mask_ ? &event.get(*mask_) : nullptr;
+    if (mask && mask->size() != results.size())
+      throw cms::Exception("EECs") << "EECAggregator " << moduleDescription().moduleLabel() << ": jetMask has "
+                                   << mask->size() << " entries for " << results.size() << " jets";
     acc_.beginEvent();
-    for (const auto& r : results) {
+    for (std::size_t i = 0; i < results.size(); ++i) {
+      if (mask && (*mask)[i])
+        continue;
+      const auto& r = results[i];
       if constexpr (std::is_same_v<Result, eec::DenseResult>) {
         if (r.values.size() != acc_.nBins())
-          throw cms::Exception("EECs") << "EECAggregator " << moduleDescription().moduleLabel() << ": dense result has " << r.values.size()
-                                       << " bins, binning has " << acc_.nBins();
+          throw cms::Exception("EECs") << "EECAggregator " << moduleDescription().moduleLabel() << ": dense result has "
+                                       << r.values.size() << " bins, binning has " << acc_.nBins();
         for (std::size_t b = 0; b < r.values.size(); ++b)
           if (r.values[b] != 0)
             acc_.add(b, r.values[b]);
@@ -85,7 +98,8 @@ public:
     TFileService& dir = *fs;
     const int nb = acc_.nBins();
     auto* values = dir.make<TH1D>("values", "EEC values;linear bin", nb, -0.5, nb - 0.5);
-    auto* cov = dir.make<TH2D>("covariance", "sum w^2 h h^T;linear bin;linear bin", nb, -0.5, nb - 0.5, nb, -0.5, nb - 0.5);
+    auto* cov =
+        dir.make<TH2D>("covariance", "sum w^2 h h^T;linear bin;linear bin", nb, -0.5, nb - 0.5, nb, -0.5, nb - 0.5);
     for (int i = 0; i < nb; ++i) {
       values->SetBinContent(i + 1, acc_.values()[i]);
       values->SetBinError(i + 1, std::sqrt(std::max(0.0, acc_.covariance(i, i))));
@@ -124,6 +138,7 @@ private:
   const edm::EDGetTokenT<std::vector<Result>> src_;
   std::optional<edm::EDGetTokenT<GenEventInfoProduct>> gen_;
   std::vector<edm::EDGetTokenT<double>> weights_;
+  std::optional<edm::EDGetTokenT<std::vector<bool>>> mask_;
   const eec::Binning binning_;
   eec::CovarianceAccumulator acc_;
 };

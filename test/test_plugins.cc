@@ -174,7 +174,8 @@ TEST_CASE("E1CProducer jetCS frame matches the library frame", "[plugins][e1c]")
   const auto& out = *ev.get<std::vector<eec::SparseResult>>();
   REQUIRE(out.size() == 1);
   const eec::Binning b({eec::RegularAxis(8, 0, 3.15), eec::VariableAxis(std::vector<double>{-3.15, -1, 0, 1, 3.15})});
-  eec::OnePointEC<eec::weight::Energy, eec::norm::External, eec::frame::BoostRotate, eec::output::SparseMerged> ref(1.0, b);
+  eec::OnePointEC<eec::weight::Energy, eec::norm::External, eec::frame::BoostRotate, eec::output::SparseMerged> ref(1.0,
+                                                                                                                    b);
   const auto ps = srothman::toPseudoJets(jets[0]);
   double S = 0;
   for (const auto& p : ps)
@@ -187,7 +188,8 @@ TEST_CASE("E1CProducer jetCS frame matches the library frame", "[plugins][e1c]")
     CHECK(out[0].entries[k].weight == Approx(r.entries[k].weight).epsilon(1e-12));
   }
   // A different frame bins differently for this jet, so the frame choice is visible in the output.
-  const auto rh = ref(ps, eec::config::makeFrame(eec::config::FrameKind::JetHelicity, srothman::jetPseudoJet(jets[0])), S);
+  const auto rh =
+      ref(ps, eec::config::makeFrame(eec::config::FrameKind::JetHelicity, srothman::jetPseudoJet(jets[0])), S);
   bool differs = rh.entries.size() != r.entries.size();
   for (std::size_t k = 0; !differs && k < r.entries.size(); ++k)
     differs = rh.entries[k].bin != r.entries[k].bin;
@@ -195,14 +197,16 @@ TEST_CASE("E1CProducer jetCS frame matches the library frame", "[plugins][e1c]")
 }
 
 TEST_CASE("EEC producers reject bad configuration", "[plugins]") {
-  const std::string badNorm = std::string(kHeader) +
-                              "process.toTest = cms.EDProducer('PENCProducer_Pt_DeltaR_SparseMerged', src = "
-                              "cms.InputTag('jets'), N = cms.uint32(2), n = cms.double(1.0), norm = cms.string('pt'), " +
-                              kLogAxis + ")\nprocess.moduleToTest(process.toTest)\n";
-  const std::string badN = std::string(kHeader) +
-                           "process.toTest = cms.EDProducer('PENCProducer_Pt_DeltaR_SparseMerged', src = "
-                           "cms.InputTag('jets'), N = cms.uint32(7), n = cms.double(1.0), norm = cms.string('sumPt'), " +
-                           kLogAxis + ")\nprocess.moduleToTest(process.toTest)\n";
+  const std::string badNorm =
+      std::string(kHeader) +
+      "process.toTest = cms.EDProducer('PENCProducer_Pt_DeltaR_SparseMerged', src = "
+      "cms.InputTag('jets'), N = cms.uint32(2), n = cms.double(1.0), norm = cms.string('pt'), " +
+      kLogAxis + ")\nprocess.moduleToTest(process.toTest)\n";
+  const std::string badN =
+      std::string(kHeader) +
+      "process.toTest = cms.EDProducer('PENCProducer_Pt_DeltaR_SparseMerged', src = "
+      "cms.InputTag('jets'), N = cms.uint32(7), n = cms.double(1.0), norm = cms.string('sumPt'), " +
+      kLogAxis + ")\nprocess.moduleToTest(process.toTest)\n";
   const std::string badFrame = std::string(kHeader) +
                                "process.toTest = cms.EDProducer('E1CProducer_Pt_Unbinned', src = cms.InputTag('jets'), "
                                "n = cms.double(1.0), norm = cms.string('sumPt'), frame = cms.string('CS'))\n"
@@ -262,7 +266,6 @@ TEST_CASE("EECTableProducer writes per-jet, entry and run tables", "[plugins][ta
   CHECK(col(et, "weight", 1) == 0.125);
   CHECK(col(et, "symfactor", 0) == 6);
   CHECK(col(et, "symfactor", 1) == 1);
-
 }
 
 TEST_CASE("EECTableProducer for 2D unbinned results names the coordinates", "[plugins][table]") {
@@ -294,7 +297,9 @@ TEST_CASE("EECAggregator writes H, C and weight sums", "[plugins][aggregator]") 
         "process.toTest = cms.EDAnalyzer('EECAggregator_SparseMerged', src = cms.InputTag('res'), "
         "genEventInfo = cms.InputTag('generator'), maxBins = cms.uint32(100), axes = cms.VPSet("
         "cms.PSet(type = cms.string('regular'), nbins = cms.uint32(2), lo = cms.double(0), hi = cms.double(1), edges "
-        "= cms.vdouble())))\nprocess.moduleToTest(process.toTest)\nprocess.add_(cms.Service('JobReportService'))\nprocess.add_(cms.Service('TFileService', fileName "
+        "= "
+        "cms.vdouble())))\nprocess.moduleToTest(process.toTest)\nprocess.add_(cms.Service('JobReportService'))"
+        "\nprocess.add_(cms.Service('TFileService', fileName "
         "= cms.string('" +
         file + "')))\n"};
     auto putRes = config.produces<std::vector<eec::SparseResult>>("res");
@@ -359,7 +364,8 @@ TEST_CASE("EECAggregator rejects a dense result of the wrong size", "[plugins][a
       "process.toTest = cms.EDAnalyzer('EECAggregator_Dense', src = cms.InputTag('res'), "
       "genEventInfo = cms.InputTag(''), maxBins = cms.uint32(100), axes = cms.VPSet(cms.PSet(type = "
       "cms.string('regular'), nbins = cms.uint32(2), lo = cms.double(0), hi = cms.double(1), edges = "
-      "cms.vdouble())))\nprocess.moduleToTest(process.toTest)\nprocess.add_(cms.Service('JobReportService'))\nprocess.add_(cms.Service('TFileService', fileName = "
+      "cms.vdouble())))\nprocess.moduleToTest(process.toTest)\nprocess.add_(cms.Service('JobReportService'))\nprocess."
+      "add_(cms.Service('TFileService', fileName = "
       "cms.string('" +
       file + "')))\n"};
   auto put = config.produces<std::vector<eec::DenseResult>>("res");
@@ -426,7 +432,8 @@ TEST_CASE("EECAggregator multiplies the extra weights into the generator weight"
     std::vector<eec::SparseResult> r(1);
     r[0].entries = {{1, 0.5}};
     tester.test(std::make_pair(putRes, std::make_unique<std::vector<eec::SparseResult>>(r)),
-                std::make_pair(putGen, std::move(gen)), std::make_pair(putA, std::make_unique<double>(0.9)),
+                std::make_pair(putGen, std::move(gen)),
+                std::make_pair(putA, std::make_unique<double>(0.9)),
                 std::make_pair(putB, std::make_unique<double>(1.5)));
   }
   TFile f(file.c_str(), "READ");
@@ -437,6 +444,41 @@ TEST_CASE("EECAggregator multiplies the extra weights into the generator weight"
   CHECK(values->GetBinContent(2) == Approx(2.7 * 0.5));
   CHECK(cov->GetBinContent(2, 2) == Approx(2.7 * 2.7 * 0.25));
   CHECK(f.Get<TParameter<double>>("toTest/sumW")->GetVal() == Approx(2.7));
+  f.Close();
+  std::remove(file.c_str());
+}
+
+TEST_CASE("EECAggregator skips the jets flagged in jetMask", "[plugins][aggregator]") {
+  const std::string file = "testEECAggregatorM_" + std::to_string(::getpid()) + ".root";
+  {
+    edm::test::TestProcessor::Config config{
+        std::string(kHeader) +
+        "process.toTest = cms.EDAnalyzer('EECAggregator_SparseMerged', src = cms.InputTag('res'), genEventInfo = "
+        "cms.InputTag(''), weights = cms.VInputTag(), jetMask = cms.InputTag('mask'), maxBins = cms.uint32(100), axes "
+        "= cms.VPSet(cms.PSet(type = cms.string('regular'), nbins = cms.uint32(2), lo = cms.double(0), hi = "
+        "cms.double(1), edges = cms.vdouble())))\nprocess.moduleToTest(process.toTest)\n"
+        "process.add_(cms.Service('JobReportService'))\n"
+        "process.add_(cms.Service('TFileService', fileName = cms.string('" +
+        file + "')))\n"};
+    auto putRes = config.produces<std::vector<eec::SparseResult>>("res");
+    auto putMask = config.produces<std::vector<bool>>("mask");
+    edm::test::TestProcessor tester(config);
+    // Three jets; the middle one is masked: h = (0, 0.5 + 0.25, 0.125, 0).
+    std::vector<eec::SparseResult> r(3);
+    r[0].entries = {{1, 0.5}};
+    r[1].entries = {{1, 0.3}, {2, 0.7}};
+    r[2].entries = {{1, 0.25}, {2, 0.125}};
+    tester.test(std::make_pair(putRes, std::make_unique<std::vector<eec::SparseResult>>(r)),
+                std::make_pair(putMask, std::make_unique<std::vector<bool>>(std::vector<bool>{false, true, false})));
+    // A mask of another length is an error.
+    CHECK_THROWS(tester.test(std::make_pair(putRes, std::make_unique<std::vector<eec::SparseResult>>(r)),
+                             std::make_pair(putMask, std::make_unique<std::vector<bool>>(std::vector<bool>{false}))));
+  }
+  TFile f(file.c_str(), "READ");
+  auto* values = f.Get<TH1D>("toTest/values");
+  REQUIRE(values);
+  CHECK(values->GetBinContent(2) == Approx(0.75));
+  CHECK(values->GetBinContent(3) == Approx(0.125));
   f.Close();
   std::remove(file.c_str());
 }

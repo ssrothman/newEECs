@@ -392,7 +392,7 @@ and write `std::vector<Result>`, with one result per jet in input order.
 | `PENCProducer_<Energy\|Pt>_<DeltaR\|Angle3D>_<Output>` | `std::vector<Output result>` | `src`, `N` (2–6), `n`, `norm`, `axes` (binned outputs, 1 axis) |
 | `E1CProducer_<Energy\|Pt>_<Output>` | same (`UnbinnedResult<2>` when unbinned) | `src`, `n`, `norm`, `frame`, `axes` (binned outputs, 2 axes) |
 | `EECTableProducer_<Dense\|SparseMerged\|SparseUnmerged\|Unbinned1\|Unbinned2>` | NanoAOD `FlatTable`s | `src`, `name`, `doc`, `weightPrecision`; `axes` (binned) or `coordNames`, `coordPrecision` (unbinned) |
-| `EECAggregator_<Dense\|SparseMerged\|SparseUnmerged>` | TFileService objects | `src`, `genEventInfo` (empty: unit weights), `maxBins`, `axes` |
+| `EECAggregator_<Dense\|SparseMerged\|SparseUnmerged>` | TFileService objects | `src`, `genEventInfo` (empty: unit weights), `weights` (extra event weights), `jetMask` (`std::vector<bool>` aligned with `src`, true = skip the jet; empty: none), `maxBins`, `axes` |
 
 - `<Output>` is one of `Dense`, `SparseMerged`, `SparseUnmerged` or `Unbinned`.
 - A jet with no constituents gets an empty result: no entries, or all-zero bins for `Dense`. Its E_jet is computed as usual, for example 0 for `sumPt`.
@@ -408,6 +408,6 @@ and write `std::vector<Result>`, with one result per jet in input order.
   - A TH2D of `maxBins`² doubles must fit in memory.
 - **Python** (`SRothman.EECs.eecTools`):
   - `addObservable(process, label, src, spec, tableName)` creates the producer and `<label>Table`; the `Table` suffix matches the default NanoAOD keep rule.
-  - `addAggregator(process, label, src, spec, genEventInfo, maxBins)` creates an aggregator, which must be put on a Path or EndPath.
+  - `addAggregator(process, label, src, spec, genEventInfo, maxBins, weights=(), jetMask='')` creates an aggregator, which must be put on a Path or EndPath.
   - `spec` is one entry of `observables` in the boostedV analysis YAML (`simulation/configs/default.yaml`). The helpers have no physics defaults; `axisPSet` turns an axis spec into a PSet.
 - **Tests:** `test/test_plugins.cc` (scram only) runs each module type family through `edm::test::TestProcessor` and checks the results against direct library calls and hand-computed values.
