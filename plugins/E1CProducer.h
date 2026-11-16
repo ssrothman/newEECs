@@ -15,7 +15,7 @@
 // One-point correlator (theta, phi) of every jet in `src`, in the per-jet frame chosen by `frame`.
 template <class Weight, class Output>
 class E1CProducer : public edm::stream::EDProducer<> {
-  using Calc = eec::OnePointEC<Weight, eec::norm::External, eec::frame::BoostRotate, Output>;
+  using Calc = eec::OnePointEC<Weight, eec::norm::External, eec::frame::Any, Output>;
   using Result = typename Calc::Result;
 
 public:
@@ -47,7 +47,7 @@ public:
     desc.add<edm::InputTag>("src", edm::InputTag("eecJets"));
     desc.add<double>("n", 1.0)->setComment("power of the energy weights");
     desc.add<std::string>("norm", "sumPt")->setComment("E_jet: sumE, sumPt, jetE, jetPt or unity");
-    desc.add<std::string>("frame", "jetHelicity")->setComment("lab, jetAxis, jetHelicity or jetCS");
+    desc.add<std::string>("frame", "jetHelicity")->setComment("lab, jetAxis, jetHelicity, jetCS or jetProjective");
     if constexpr (Output::binned)
       eecplugin::addAxes(desc,
                          {eecplugin::axisPSet("regular", 20, 0.0, M_PI), eecplugin::axisPSet("regular", 20, -M_PI, M_PI)});

@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <stdexcept>
+#include <variant>
 #include <vector>
 
 namespace eec {
@@ -65,6 +66,43 @@ namespace eec {
       std::array<double, 3> z_, x_, y_;
       std::array<double, 3> restP_, restProj_;  // rest's three-momentum, and its components along x_, y_, z_
       double restE_, restM_;
+    };
+
+    // (theta, phi) in the (eta, phi) plane around `axis`: theta = DeltaR (pseudorapidity, Delta phi in [-pi, pi]),
+    // phi = atan2(-s dphi, s deta) with s the sign of the axis pz (+1 at pz = 0). phi = 0 points toward the beam on
+    // the axis side, with the handedness of axes x (toward that beam) and y = z cross x, so that phi equals the
+    // BoostRotate phi of those axes (without boost) for particles close to the axis.
+    class Projective {
+    public:
+      static constexpr std::size_t D = 2;
+
+      explicit Projective(const fastjet::PseudoJet& axis)
+          : eta_(axis.pseudorapidity()), phi_(axis.phi_std()), s_(axis.pz() < 0 ? -1.0 : 1.0) {}
+
+      std::array<double, 2> operator()(const fastjet::PseudoJet& p) const {
+        const double deta = p.pseudorapidity() - eta_;
+        const double dphi = std::remainder(p.phi_std() - phi_, 2 * M_PI);
+        return {{std::hypot(deta, dphi), std::atan2(-s_ * dphi, s_ * deta)}};
+      }
+
+    private:
+      double eta_, phi_, s_;
+    };
+
+    // Either frame, chosen at run time.
+    class Any {
+    public:
+      static constexpr std::size_t D = 2;
+
+      Any(BoostRotate f) : f_(std::move(f)) {}
+      Any(Projective f) : f_(f) {}
+
+      std::array<double, 2> operator()(const fastjet::PseudoJet& p) const {
+        return std::visit([&p](const auto& f) { return f(p); }, f_);
+      }
+
+    private:
+      std::variant<BoostRotate, Projective> f_;
     };
 
   }  // namespace frame

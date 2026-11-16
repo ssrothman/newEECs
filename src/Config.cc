@@ -85,6 +85,8 @@ namespace eec::config {
       return FrameKind::JetHelicity;
     if (s == "jetCS")
       return FrameKind::JetCS;
+    if (s == "jetProjective")
+      return FrameKind::JetProjective;
     throw std::invalid_argument("eec::config: unknown frame '" + s + "'");
   }
 
@@ -95,18 +97,20 @@ namespace eec::config {
     }
   }  // namespace
 
-  frame::BoostRotate makeFrame(FrameKind kind, const fastjet::PseudoJet& jet) {
+  frame::Any makeFrame(FrameKind kind, const fastjet::PseudoJet& jet) {
+    const double sign = jet.pz() < 0 ? -1.0 : 1.0;  // beam A
     switch (kind) {
       case FrameKind::Lab:
         return frame::BoostRotate(fastjet::PseudoJet(0, 0, 0, 1), {{0, 0, 1}}, {{1, 0, 0}});
       case FrameKind::JetAxis:
-        return frame::BoostRotate(fastjet::PseudoJet(0, 0, 0, 1), {{jet.px(), jet.py(), jet.pz()}}, {{0, 0, 1}});
+        return frame::BoostRotate(fastjet::PseudoJet(0, 0, 0, 1), {{jet.px(), jet.py(), jet.pz()}}, {{0, 0, sign}});
       case FrameKind::JetHelicity: {
         // A boost along the jet direction leaves the plane of (jet, beam) unchanged, so lab vectors serve as rest-frame axes.
-        return frame::BoostRotate(jet, {{jet.px(), jet.py(), jet.pz()}}, {{0, 0, 1}});
+        return frame::BoostRotate(jet, {{jet.px(), jet.py(), jet.pz()}}, {{0, 0, sign}});
       }
+      case FrameKind::JetProjective:
+        return frame::Projective(jet);
       case FrameKind::JetCS: {
-        const double sign = jet.pz() < 0 ? -1.0 : 1.0;
         fastjet::PseudoJet beamA(0, 0, sign, 1), beamB(0, 0, -sign, 1);
         beamA.unboost(jet);
         beamB.unboost(jet);

@@ -114,26 +114,60 @@ TEST_CASE("Helicity frame: a particle along the jet has theta 0", "[config][fram
   CHECK_THROWS_AS(makeFrame(FrameKind::JetHelicity, fastjet::PseudoJet(1, 0, 0, 1)), std::invalid_argument);
 }
 
-TEST_CASE("Jet-axis frame: lab angles around the jet axis, x toward the +z beam", "[config][frame]") {
-  // Massive jet off the beam axis; axes built in the lab: z = jet direction, x = +z_lab orthogonalised, y = z cross x.
-  const fastjet::PseudoJet jet(150, -90, 220, 330);
-  const double m = jet.modp();
-  const std::array<double, 3> z{{jet.px() / m, jet.py() / m, jet.pz() / m}};
-  std::array<double, 3> x{{-z[2] * z[0], -z[2] * z[1], 1 - z[2] * z[2]}};
-  const double xn = std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
-  for (auto& c : x)
-    c /= xn;
-  const std::array<double, 3> y{{z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]}};
-  const auto ax = makeFrame(parseFrame("jetAxis"), jet);
-  const auto hel = makeFrame(FrameKind::JetHelicity, jet);
-  const fastjet::PseudoJet atRest(0, 0, 0, 1);
-  for (double theta : {0.01, 0.3, 1.2})
-    for (double phi : {-2.8, -0.4, 1.1, 2.9}) {
-      const auto p = fromRestFrame(theta, phi, x, y, z, atRest);  // no boost: built directly in the lab
-      const auto c = ax(p);
-      CHECK(c[0] == Approx(theta).margin(1e-9));
-      CHECK(c[1] == Approx(phi).margin(1e-9));
-      // The helicity frame boosts, so its theta differs: the jet-axis frame is not the helicity frame.
-      CHECK(std::abs(hel(p)[0] - theta) > 1e-3);
+TEST_CASE("Jet-axis frame: lab angles around the jet axis, x toward the beam on the jet side", "[config][frame]") {
+  // Massive jets off the beam axis, forward and backward; axes built in the lab: z = jet direction, x = the beam on the
+  // jet side (sign of pz) orthogonalised, y = z cross x.
+  for (double pz : {220.0, -220.0}) {
+    const fastjet::PseudoJet jet(150, -90, pz, 330);
+    const double m = jet.modp(), sign = pz < 0 ? -1.0 : 1.0;
+    const std::array<double, 3> z{{jet.px() / m, jet.py() / m, jet.pz() / m}};
+    std::array<double, 3> x{{-sign * z[2] * z[0], -sign * z[2] * z[1], sign * (1 - z[2] * z[2])}};
+    const double xn = std::sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]);
+    for (auto& c : x)
+      c /= xn;
+    const std::array<double, 3> y{{z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]}};
+    const auto ax = makeFrame(parseFrame("jetAxis"), jet);
+    const auto hel = makeFrame(FrameKind::JetHelicity, jet);
+    const fastjet::PseudoJet atRest(0, 0, 0, 1);
+    for (double theta : {0.01, 0.3, 1.2})
+      for (double phi : {-2.8, -0.4, 1.1, 2.9}) {
+        const auto p = fromRestFrame(theta, phi, x, y, z, atRest);  // no boost: built directly in the lab
+        const auto c = ax(p);
+        CHECK(c[0] == Approx(theta).margin(1e-9));
+        CHECK(c[1] == Approx(phi).margin(1e-9));
+        // The helicity frame boosts, so its theta differs: the jet-axis frame is not the helicity frame.
+        CHECK(std::abs(hel(p)[0] - theta) > 1e-3);
+        // Same x and y in the jet rest frame (a boost along z keeps them), so the helicity phi is the same.
+        CHECK(hel(fromRestFrame(theta, phi, x, y, z, jet))[1] == Approx(phi).margin(1e-9));
+      }
+  }
+}
+
+TEST_CASE("Projective frame: DeltaR and the (eta, phi) direction, phi = 0 toward the beam on the jet side",
+          "[config][frame]") {
+  const auto ptEtaPhi = [](double pt, double eta, double phi) {
+    return fastjet::PseudoJet(pt * std::cos(phi), pt * std::sin(phi), pt * std::sinh(eta), pt * std::cosh(eta));
+  };
+  for (double s : {1.0, -1.0}) {
+    const double eta = 0.8 * s, phi = 3.0;  // phi near pi: the azimuth difference must be folded
+    const auto jet = ptEtaPhi(400, eta, phi);
+    const auto f = makeFrame(parseFrame("jetProjective"), jet);
+    for (double dEta : {-0.3, 0.0, 0.2})
+      for (double dPhi : {-0.25, 0.0, 0.35}) {
+        if (dEta == 0 && dPhi == 0)
+          continue;
+        const auto c = f(ptEtaPhi(20, eta + dEta, phi + dPhi));
+        CHECK(c[0] == Approx(std::hypot(dEta, dPhi)).margin(1e-9));
+        CHECK(c[1] == Approx(std::atan2(-s * dPhi, s * dEta)).margin(1e-9));
+      }
+    // Toward the beam on the jet side (larger |eta|): phi = 0; a step in +phi: phi = -s pi/2 (y = z cross x).
+    CHECK(f(ptEtaPhi(20, eta + 0.1 * s, phi))[1] == Approx(0.0).margin(1e-9));
+    CHECK(f(ptEtaPhi(20, eta, phi + 0.1))[1] == Approx(-s * kPi / 2).margin(1e-9));
+    // Close to the axis, the jet-axis frame gives the same phi.
+    const auto ax = makeFrame(FrameKind::JetAxis, jet);
+    for (double a : {-2.5, -1.0, 0.4, 1.9}) {
+      const auto p = ptEtaPhi(20, eta + 1e-4 * std::cos(a), phi + 1e-4 * std::sin(a));
+      CHECK(std::remainder(f(p)[1] - ax(p)[1], 2 * kPi) == Approx(0.0).margin(1e-3));
     }
+  }
 }

@@ -34,17 +34,20 @@ namespace eec::config {
   // Bin edges without flow bins: size() + 1 values.
   std::vector<double> axisEdges(const Axis& a);
 
-  // E1C frames for a jet with four-momentum `jet`:
-  //  Lab:         lab polar angle and azimuth.
-  //  JetAxis:     lab frame (no boost); z along the jet direction, x in the plane of z and the beam (toward +z beam).
-  //  JetHelicity: jet rest frame; z along the jet direction, x in the plane of z and the beam (toward +z beam).
-  //  JetCS:       jet rest frame, Collins-Soper axes: z bisects p_A and -p_B, x opposite to p_A + p_B, where
-  //               beam A is the beam moving along sign(jet pz) (beam +z if pz = 0).
-  enum class FrameKind { Lab, JetAxis, JetHelicity, JetCS };
-  // Accepts "lab", "jetAxis", "jetHelicity", "jetCS"; throws std::invalid_argument otherwise.
+  // E1C frames for a jet with four-momentum `jet`. Beam A is the beam moving along sign(jet pz) (beam +z if pz = 0),
+  // i.e. the beam on the jet's side.
+  //  Lab:           lab polar angle and azimuth.
+  //  JetAxis:       lab frame (no boost); z along the jet direction, x in the plane of z and the beam, toward beam A.
+  //  JetHelicity:   jet rest frame; z along the jet direction, x in the plane of z and the beam, toward beam A.
+  //  JetCS:         jet rest frame, Collins-Soper axes: z bisects p_A and -p_B, x opposite to p_A + p_B.
+  //  JetProjective: frame::Projective around the jet axis: theta = DeltaR, phi in the (eta, phi) plane with phi = 0
+  //                 toward beam A; equals JetAxis for particles close to the jet axis.
+  enum class FrameKind { Lab, JetAxis, JetHelicity, JetCS, JetProjective };
+  // Accepts "lab", "jetAxis", "jetHelicity", "jetCS", "jetProjective"; throws std::invalid_argument otherwise.
   FrameKind parseFrame(const std::string& s);
-  // Throws std::invalid_argument (from frame::BoostRotate) for a non-timelike jet or degenerate axes.
-  frame::BoostRotate makeFrame(FrameKind kind, const fastjet::PseudoJet& jet);
+  // Throws std::invalid_argument (from frame::BoostRotate) for a non-timelike jet or degenerate axes, except for
+  // JetProjective.
+  frame::Any makeFrame(FrameKind kind, const fastjet::PseudoJet& jet);
 
 }  // namespace eec::config
 

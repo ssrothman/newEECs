@@ -174,7 +174,7 @@ TEST_CASE("E1CProducer jetCS frame matches the library frame", "[plugins][e1c]")
   const auto& out = *ev.get<std::vector<eec::SparseResult>>();
   REQUIRE(out.size() == 1);
   const eec::Binning b({eec::RegularAxis(8, 0, 3.15), eec::VariableAxis(std::vector<double>{-3.15, -1, 0, 1, 3.15})});
-  eec::OnePointEC<eec::weight::Energy, eec::norm::External, eec::frame::BoostRotate, eec::output::SparseMerged> ref(1.0,
+  eec::OnePointEC<eec::weight::Energy, eec::norm::External, eec::frame::Any, eec::output::SparseMerged> ref(1.0,
                                                                                                                     b);
   const auto ps = srothman::toPseudoJets(jets[0]);
   double S = 0;
