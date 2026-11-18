@@ -39,9 +39,10 @@ def _check(name, spec):
         raise ValueError('%s: unbinned output takes no axes' % name)
 
 
-def addObservable(process, label, src, spec, tableName, task=None):
+def addObservable(process, label, src, spec, tableName, task=None, axisIndex=-1):
     """Producer `label` for the EECJetCollection `src` and its NanoAOD tables `<label>Table` (the suffix matches the
-    default NANO keep rule), named tableName / tableName + 'Entries'."""
+    default NANO keep rule), named tableName / tableName + 'Entries'. E1C: axisIndex >= 0 builds the frame on
+    EECJet::axes[axisIndex]."""
     _check(label, spec)
     binned = spec['output'] != 'Unbinned'
     if spec['kind'] == 'penc':
@@ -50,7 +51,8 @@ def addObservable(process, label, src, spec, tableName, task=None):
                            norm=cms.string(spec['norm']))
     else:
         p = cms.EDProducer('E1CProducer_%s_%s' % (spec['weight'], spec['output']), src=cms.InputTag(src),
-                           n=cms.double(spec['n']), norm=cms.string(spec['norm']), frame=cms.string(spec['frame']))
+                           n=cms.double(spec['n']), norm=cms.string(spec['norm']), frame=cms.string(spec['frame']),
+                           axis=cms.int32(axisIndex))
     t = spec['table']
     if binned:
         axes = [axisPSet(a) for a in spec['axes']]

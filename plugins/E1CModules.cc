@@ -14,3 +14,7 @@ EEC_DEFINE_E1C(Pt, Dense);
 EEC_DEFINE_E1C(Pt, SparseMerged);
 EEC_DEFINE_E1C(Pt, SparseUnmerged);
 EEC_DEFINE_E1C(Pt, Unbinned);
+EEC_DEFINE_E1C(Charge, Dense);
+EEC_DEFINE_E1C(Charge, SparseMerged);
+EEC_DEFINE_E1C(Charge, SparseUnmerged);
+EEC_DEFINE_E1C(Charge, Unbinned);

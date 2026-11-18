@@ -10,9 +10,12 @@
 #include "SRothman/EECs/plugins/PluginCommon.h"
 
 #include <cmath>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
-// One-point correlator (theta, phi) of every jet in `src`, in the per-jet frame chosen by `frame`.
+// One-point correlator (theta, phi) of every jet in `src`, in the per-jet frame chosen by `frame`, built on the jet
+// four-momentum or, if axis >= 0, on EECJet::axes[axis] (the normalisation always uses the jet).
 template <class Weight, class Output>
 class E1CProducer : public edm::stream::EDProducer<> {
   using Calc = eec::OnePointEC<Weight, eec::norm::External, eec::frame::Any, Output>;
@@ -23,6 +26,7 @@ public:
       : src_(consumes(cfg.getParameter<edm::InputTag>("src"))),
         put_(produces()),
         n_(cfg.getParameter<double>("n")),
+        axis_(cfg.getParameter<int>("axis")),
         norm_(eecplugin::configGuard("E1CProducer", [&] {
           return eec::config::parseNorm(cfg.getParameter<std::string>("norm"));
         })),
@@ -48,6 +52,7 @@ public:
     desc.add<double>("n", 1.0)->setComment("power of the energy weights");
     desc.add<std::string>("norm", "sumPt")->setComment("E_jet: sumE, sumPt, jetE, jetPt or unity");
     desc.add<std::string>("frame", "jetHelicity")->setComment("lab, jetAxis, jetHelicity, jetCS or jetProjective");
+    desc.add<int>("axis", -1)->setComment("index in EECJet::axes; -1: the jet four-momentum");
     if constexpr (Output::binned)
       eecplugin::addAxes(desc,
                          {eecplugin::axisPSet("regular", 20, 0.0, M_PI), eecplugin::axisPSet("regular", 20, -M_PI, M_PI)});
@@ -67,7 +72,15 @@ public:
         continue;
       }
       try {
-        out.push_back(calc_(ps, eec::config::makeFrame(frame_, jet), E));
+        fastjet::PseudoJet frameJet = jet;
+        if (axis_ >= 0) {
+          if (static_cast<std::size_t>(axis_) >= jets[i].axes.size())
+            throw std::invalid_argument("axis " + std::to_string(axis_) + " not filled (" +
+                                        std::to_string(jets[i].axes.size()) + " axes)");
+          const auto& a = jets[i].axes[axis_];
+          frameJet = fastjet::PseudoJet(a.px, a.py, a.pz, a.E);
+        }
+        out.push_back(calc_(ps, eec::config::makeFrame(frame_, frameJet), E));
       } catch (const std::exception& ex) {
         throw cms::Exception("EECs") << "E1CProducer: jet " << i << " (pt " << jets[i].pt << "): " << ex.what();
       }
@@ -79,6 +92,7 @@ private:
   const edm::EDGetTokenT<srothman::EECJetCollection> src_;
   const edm::EDPutTokenT<std::vector<Result>> put_;
   const double n_;
+  const int axis_;
   const eec::config::NormSource norm_;
   const eec::config::FrameKind frame_;
   const eec::Binning binning_;
