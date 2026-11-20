@@ -2,11 +2,11 @@
 
 Every value comes from the caller's spec (see simulation/configs/default.yaml in boostedV); there are no physics
 defaults here. Module types are registered in plugins/*Modules.cc as
-PENCProducer_<Weight>_<Angle>_<Output> and E1CProducer_<Weight>_<Output>.
+PENCProducer_<Weight>_<Angle>_<Output>, RE3CProducer_<Weight>_<Angle>_<Output> and E1CProducer_<Weight>_<Output>.
 
 Observable spec keys:
-  kind: penc | e1c;  n, weight, output, norm, axes (binned outputs only; a list of axis specs)
-  penc: N, angle;  e1c: frame
+  kind: penc | resolvedE3C | e1c;  n, weight, output, norm, axes (binned outputs only; a list of axis specs)
+  penc: N, angle;  resolvedE3C: angle (axes R_L, xi, phi);  e1c: frame
   table: {weightPrecision, coordPrecision, coordNames (unbinned only)}
 Axis spec: {type: regular|log, nbins, lo, hi} or {type: variable, edges}.
 """
@@ -23,15 +23,18 @@ def axisPSet(a):
                     hi=cms.double(a['hi']), edges=cms.vdouble())
 
 
+RANK = {'penc': 1, 'e1c': 2, 'resolvedE3C': 3}
+
+
 def _rank(spec):
-    return 1 if spec['kind'] == 'penc' else 2
+    return RANK[spec['kind']]
 
 
 def _check(name, spec):
     if spec['output'] not in OUTPUTS:
         raise ValueError('%s: output must be one of %s, got %s' % (name, OUTPUTS, spec['output']))
-    if spec['kind'] not in ('penc', 'e1c'):
-        raise ValueError('%s: kind must be penc or e1c' % name)
+    if spec['kind'] not in RANK:
+        raise ValueError('%s: kind must be one of %s' % (name, sorted(RANK)))
     binned = spec['output'] != 'Unbinned'
     if binned and len(spec.get('axes', [])) != _rank(spec):
         raise ValueError('%s: output %s needs %d axes' % (name, spec['output'], _rank(spec)))
@@ -49,6 +52,9 @@ def addObservable(process, label, src, spec, tableName, task=None, axisIndex=-1)
         p = cms.EDProducer('PENCProducer_%s_%s_%s' % (spec['weight'], spec['angle'], spec['output']),
                            src=cms.InputTag(src), N=cms.uint32(spec['N']), n=cms.double(spec['n']),
                            norm=cms.string(spec['norm']))
+    elif spec['kind'] == 'resolvedE3C':
+        p = cms.EDProducer('RE3CProducer_%s_%s_%s' % (spec['weight'], spec['angle'], spec['output']),
+                           src=cms.InputTag(src), n=cms.double(spec['n']), norm=cms.string(spec['norm']))
     else:
         p = cms.EDProducer('E1CProducer_%s_%s' % (spec['weight'], spec['output']), src=cms.InputTag(src),
                            n=cms.double(spec['n']), norm=cms.string(spec['norm']), frame=cms.string(spec['frame']),

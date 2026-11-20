@@ -83,8 +83,9 @@ public:
       eecplugin::addAxes(desc, {eecplugin::axisPSet("log", 50, 1e-3, 1.0)});
     } else {
       desc.add<std::vector<std::string>>("coordNames",
-                                         Traits::D == 1 ? std::vector<std::string>{"angle"}
-                                                        : std::vector<std::string>{"theta", "phi"});
+                                         Traits::D == 1   ? std::vector<std::string>{"angle"}
+                                         : Traits::D == 2 ? std::vector<std::string>{"theta", "phi"}
+                                                          : std::vector<std::string>{"RL", "xi", "phi"});
       desc.add<int>("coordPrecision", -1)->setComment("mantissa bits of the float coordinates; -1 = full float");
     }
     descriptions.addWithDefaultLabel(desc);

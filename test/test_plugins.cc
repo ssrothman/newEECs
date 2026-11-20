@@ -9,6 +9,7 @@
 #include "SRothman/DataFormats/interface/EECJet.h"
 #include "SRothman/EECs/interface/Config.h"
 #include "SRothman/EECs/interface/EECs.h"
+#include "SRothman/EECs/interface/TriangleShape.h"
 
 #include "TFile.h"
 #include "TH1D.h"
@@ -287,6 +288,73 @@ TEST_CASE("EECTableProducer for 2D unbinned results names the coordinates", "[pl
   CHECK(col(et, "theta", 1) == 2.0);
   CHECK(col(et, "weight", 1) == 0.25);
   CHECK(et.columnIndex("bin") == -1);
+}
+
+TEST_CASE("RE3CProducer Dense output equals a direct library call", "[plugins][re3c]") {
+  edm::test::TestProcessor::Config config{
+      std::string(kHeader) +
+      "process.toTest = cms.EDProducer('RE3CProducer_Pt_DeltaR_Dense', src = cms.InputTag('jets'), n = "
+      "cms.double(1.0), norm = cms.string('sumPt'), axes = cms.VPSet("
+      "cms.PSet(type = cms.string('log'), nbins = cms.uint32(10), lo = cms.double(1e-3), hi = cms.double(1.0), edges = "
+      "cms.vdouble()), cms.PSet(type = cms.string('regular'), nbins = cms.uint32(4), lo = cms.double(0), hi = "
+      "cms.double(1), edges = cms.vdouble()), cms.PSet(type = cms.string('regular'), nbins = cms.uint32(3), lo = "
+      "cms.double(0), hi = cms.double(1.5707963267948966), edges = cms.vdouble())))\nprocess.moduleToTest(process.toTest)\n"};
+  auto put = config.produces<EECJetCollection>("jets");
+  edm::test::TestProcessor tester(config);
+  EECJetCollection jets{randomJet(4, 11), EECJet{}};
+  auto ev = tester.test(std::make_pair(put, std::make_unique<EECJetCollection>(jets)));
+  const auto& out = *ev.get<std::vector<eec::DenseResult>>();
+  REQUIRE(out.size() == 2);
+  const eec::Binning b({eec::LogAxis(10, 1e-3, 1.0), eec::RegularAxis(4, 0.0, 1.0),
+                        eec::RegularAxis(3, 0.0, 1.5707963267948966)});
+  eec::ProjectedENC<3, eec::weight::Pt, eec::norm::External, eec::angle::DeltaR, eec::output::Dense,
+                    eec::TriangleShape<eec::angle::DeltaR>>
+      ref(1.0, b);
+  const auto r = ref(srothman::toPseudoJets(jets[0]), sumPt(jets[0]));
+  CHECK(out[0].meta.N == 3);
+  REQUIRE(out[0].values.size() == b.totalBins());
+  for (std::size_t k = 0; k < r.values.size(); ++k)
+    CHECK(out[0].values[k] == Approx(r.values[k]).margin(1e-14));
+  CHECK(out[1].values.size() == b.totalBins());
+}
+
+TEST_CASE("RE3CProducer Unbinned entries carry (R_L, xi, phi)", "[plugins][re3c]") {
+  edm::test::TestProcessor::Config config{std::string(kHeader) +
+                                          "process.toTest = cms.EDProducer('RE3CProducer_Energy_Angle3D_Unbinned', "
+                                          "src = cms.InputTag('jets'), n = cms.double(1.0), norm = "
+                                          "cms.string('jetE'))\nprocess.moduleToTest(process.toTest)\n"};
+  auto put = config.produces<EECJetCollection>("jets");
+  edm::test::TestProcessor tester(config);
+  EECJetCollection jets{randomJet(5, 6)};
+  auto ev = tester.test(std::make_pair(put, std::make_unique<EECJetCollection>(jets)));
+  const auto& out = *ev.get<std::vector<eec::UnbinnedResult<3>>>();
+  REQUIRE(out.size() == 1);
+  REQUIRE(out[0].entries.size() == 6 * 7 * 8 / 6);  // multisets of 3 from 6
+  for (const auto& e : out[0].entries) {
+    CHECK(e.coord[1] >= 0.0);
+    CHECK(e.coord[1] <= 1.0);
+    CHECK(e.coord[2] >= 0.0);
+    CHECK(e.coord[2] <= 1.5707963267948966);
+  }
+}
+
+TEST_CASE("EECTableProducer for 3D unbinned results names the coordinates", "[plugins][table]") {
+  edm::test::TestProcessor::Config config{std::string(kHeader) +
+                                          "process.toTest = cms.EDProducer('EECTableProducer_Unbinned3', src = "
+                                          "cms.InputTag('res'), name = cms.string('RE3C'))\n"
+                                          "process.moduleToTest(process.toTest)\n"};
+  auto put = config.produces<std::vector<eec::UnbinnedResult<3>>>("res");
+  edm::test::TestProcessor tester(config);
+  std::vector<eec::UnbinnedResult<3>> res(1);
+  res[0].meta = {10.0, 1.0, 3};
+  res[0].entries = {{{{0.5, 0.25, 1.0}}, 0.75, 6}};
+  auto ev = tester.test(std::make_pair(put, std::make_unique<std::vector<eec::UnbinnedResult<3>>>(res)));
+  const auto& et = *ev.get<nanoaod::FlatTable>("entries");
+  REQUIRE(et.nRows() == 1);
+  CHECK(col(et, "RL", 0) == 0.5);
+  CHECK(col(et, "xi", 0) == 0.25);
+  CHECK(col(et, "phi", 0) == 1.0);
+  CHECK(col(et, "symfactor", 0) == 6);
 }
 
 TEST_CASE("EECAggregator writes H, C and weight sums", "[plugins][aggregator]") {

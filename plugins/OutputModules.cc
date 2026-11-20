@@ -8,11 +8,13 @@ using EECTableProducer_SparseMerged = EECTableProducer<eec::SparseResult>;
 using EECTableProducer_SparseUnmerged = EECTableProducer<eec::SparseUnmergedResult>;
 using EECTableProducer_Unbinned1 = EECTableProducer<eec::UnbinnedResult<1>>;
 using EECTableProducer_Unbinned2 = EECTableProducer<eec::UnbinnedResult<2>>;
+using EECTableProducer_Unbinned3 = EECTableProducer<eec::UnbinnedResult<3>>;
 DEFINE_FWK_MODULE(EECTableProducer_Dense);
 DEFINE_FWK_MODULE(EECTableProducer_SparseMerged);
 DEFINE_FWK_MODULE(EECTableProducer_SparseUnmerged);
 DEFINE_FWK_MODULE(EECTableProducer_Unbinned1);
 DEFINE_FWK_MODULE(EECTableProducer_Unbinned2);
+DEFINE_FWK_MODULE(EECTableProducer_Unbinned3);
 
 using EECAggregator_Dense = EECAggregator<eec::DenseResult>;
 using EECAggregator_SparseMerged = EECAggregator<eec::SparseResult>;
