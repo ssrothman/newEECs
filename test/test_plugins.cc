@@ -330,12 +330,19 @@ TEST_CASE("RE3CProducer Unbinned entries carry (R_L, xi, phi)", "[plugins][re3c]
   const auto& out = *ev.get<std::vector<eec::UnbinnedResult<3>>>();
   REQUIRE(out.size() == 1);
   REQUIRE(out[0].entries.size() == 6 * 7 * 8 / 6);  // multisets of 3 from 6
+  std::size_t degenerate = 0;
   for (const auto& e : out[0].entries) {
+    if (e.coord[1] == -1.0) {  // R_S = 0
+      CHECK(e.coord[2] == -1.0);
+      ++degenerate;
+      continue;
+    }
     CHECK(e.coord[1] >= 0.0);
     CHECK(e.coord[1] <= 1.0);
     CHECK(e.coord[2] >= 0.0);
     CHECK(e.coord[2] <= 1.5707963267948966);
   }
+  CHECK(degenerate == 6 * 7 * 8 / 6 - 6 * 5 * 4 / 6);  // the multisets with a repeated particle
 }
 
 TEST_CASE("EECTableProducer for 3D unbinned results names the coordinates", "[plugins][table]") {

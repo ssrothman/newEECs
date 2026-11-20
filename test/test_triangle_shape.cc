@@ -25,8 +25,8 @@ TEST_CASE("triangleShape analytic triangles", "[shape]") {
   check(triangleShape(1, 2, 3), 0.5, 0.0);                                    // collinear
   check(triangleShape(1, 1, 0.01), 0.01, halfPi);                             // squeezed, isosceles
   check(triangleShape(2, 2.5, 1), 0.5, std::asin(std::sqrt(1 - 0.25)));      // R_L - R_M = R_S / 2
-  check(triangleShape(0, 1, 1), 0.0, 0.0);                                    // coincident pair
-  check(triangleShape(0, 0, 0), 0.0, 0.0);
+  check(triangleShape(0, 1, 1), -1.0, -1.0);                                  // coincident pair
+  check(triangleShape(0, 0, 0), -1.0, -1.0);
   check(triangleShape(1, 2, 3 + 1e-15), 0.5, 0.0);                            // rounding past collinear
 }
 
